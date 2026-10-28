@@ -37,7 +37,11 @@ _L: dict[str, dict[str, str]] = {
         "desc_min_months":      "この月数未満のデータしかない銘柄を短期銘柄として点線表示",
         # ── Symbol input ───────────────────────────────────────────────────
         "section_symbols":    "📋 銘柄入力",
-        "sym_table_hint":     "証券コードを入力し、候補から選んで確定してください。複数コードを「,」で区切って一度に貼り付けることもできます。",
+        "sym_table_hint":     "証券コードまたは日本株の銘柄名（例: トヨタ）を入力し、候補から選んで確定してください。複数を「,」や改行で区切って一度に貼り付けることもできます。",
+        "edinet_attribution": "銘柄名検索には、EDINET（金融庁）が公開する「EDINETコードリスト」を加工して使用しています。"
+                              "出典: [EDINET（金融庁）](https://disclosure2.edinet-fsa.go.jp/) ／ "
+                              "[公共データ利用規約（第1.0版）](https://www.digital.go.jp/resources/open_data/public_data_license_v1.0) ／ "
+                              "加工: Ryoji Okoshi",
         "col_symbol":         "コード",
         "col_name":           "銘柄名",
         "col_exchange":       "取引所",
@@ -210,7 +214,11 @@ _L: dict[str, dict[str, str]] = {
         "label_min_months":     "Short-term Threshold (months)",
         "desc_min_months":      "Assets with fewer months of data are shown as dashed lines",
         "section_symbols":    "📋 Stock Symbols",
-        "sym_table_hint":     "Enter ticker symbols and select from suggestions to confirm. You can paste multiple symbols separated by commas.",
+        "sym_table_hint":     "Enter ticker symbols (or a Japanese company name, e.g. トヨタ) and select from suggestions to confirm. You can paste multiple entries separated by commas or new lines.",
+        "edinet_attribution": "Company-name search uses the EDINET Code List published by EDINET (Financial Services Agency of Japan), processed for this app. "
+                              "Source: [EDINET (FSA)](https://disclosure2.edinet-fsa.go.jp/) / "
+                              "[Public Data License v1.0](https://www.digital.go.jp/resources/open_data/public_data_license_v1.0) / "
+                              "Processed by: Ryoji Okoshi",
         "col_symbol":         "Symbol",
         "col_name":           "Name",
         "col_exchange":       "Exchange",

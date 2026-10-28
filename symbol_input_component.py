@@ -36,7 +36,8 @@ from __future__ import annotations
 import os, tempfile
 import streamlit as st
 import streamlit.components.v1 as _cv1
-from symbol_resolver import search_suggestions, best_match
+from symbol_resolver import search_suggestions, best_match, resolve_edinet_pick
+from edinet_codelist import has_japanese, jp_name_for
 
 # ── Component singleton ───────────────────────────────────────────────────────
 _COMP = None
@@ -57,6 +58,25 @@ def render_symbol_table(rows, lang, country, labels, search_results=None, key="s
         rows=rows, lang=lang, country=country,
         labels=labels, search_results=search_results, key=key,
     )
+
+
+# ── Japanese company-name helpers ─────────────────────────────────────────────
+def _name_pick_item(name: str, rid) -> dict:
+    """Bulk-paste result for a Japanese name: never auto-confirmed, user picks."""
+    found = bool(search_suggestions(name, "JP"))
+    return {"row_id": rid, "symbol": None, "name": "", "exchange": "",
+            "country": "", "duplicate": False, "pick": found}
+
+
+def _resolve_name_picks(rows: list) -> list:
+    """Rows confirmed via name search get the same Yahoo name/exchange as code input."""
+    for r in rows:
+        if r.get("confirmed") and r.get("src") == "edinet":
+            hit = resolve_edinet_pick(r.get("symbol", ""))
+            if hit:
+                r.update(name=hit.get("name", ""), exchange=hit.get("exchange", ""),
+                         country=hit.get("country", ""))
+    return rows
 
 
 # ── Python-side handler ───────────────────────────────────────────────────────
@@ -97,7 +117,8 @@ def handle(cv: dict | None, prefix: str = "") -> str:
             "row_id":       rid,
             "results":      results,
             "seq":          seq,
-            "auto_confirm": action == "search_now",  # Return → auto-confirm top
+            # Return → auto-confirm top (code input only; names always need a pick)
+            "auto_confirm": action == "search_now" and not has_japanese(query),
         }
         return "new_results"
 
@@ -119,6 +140,9 @@ def handle(cv: dict | None, prefix: str = "") -> str:
         bulk, dupes = [], []
         seen = set()
         for ticker, rid in zip(tickers, row_ids):
+            if has_japanese(ticker):
+                bulk.append(_name_pick_item(ticker, rid))
+                continue
             t = ticker.upper()
             if t in confirmed_syms or t in seen:
                 dupes.append(ticker)
@@ -138,6 +162,7 @@ def handle(cv: dict | None, prefix: str = "") -> str:
                 "name":     hit.get("name","")      if hit else "",
                 "exchange": hit.get("exchange","")  if hit else "",
                 "country":  hit.get("country","")   if hit else "",
+                "name_ja":  jp_name_for(hit["symbol"]) if hit else "",
                 "duplicate": False,
             })
             if sym:
@@ -152,7 +177,7 @@ def handle(cv: dict | None, prefix: str = "") -> str:
 
     # ── Rows updated by JS ────────────────────────────────────────────────
     if action == "rows_update":
-        st.session_state[_k_rows] = cv.get("rows", [])
+        st.session_state[_k_rows] = _resolve_name_picks(cv.get("rows", []))
         st.session_state[_k_sr]   = None
         return "rows_update"
 
@@ -188,7 +213,7 @@ def handle_fund(cv: dict | None, fund: dict) -> str:
             "row_id":       rid,
             "results":      results,
             "seq":          seq,
-            "auto_confirm": action == "search_now",
+            "auto_confirm": action == "search_now" and not has_japanese(query),
         }
         return "new_results"
 
@@ -208,6 +233,9 @@ def handle_fund(cv: dict | None, fund: dict) -> str:
         bulk, dupes = [], []
         seen = set()
         for ticker, rid in zip(tickers, row_ids):
+            if has_japanese(ticker):
+                bulk.append(_name_pick_item(ticker, rid))
+                continue
             t = ticker.upper()
             if t in confirmed_syms or t in seen:
                 dupes.append(ticker)
@@ -227,6 +255,7 @@ def handle_fund(cv: dict | None, fund: dict) -> str:
                 "name":     hit.get("name", "")     if hit else "",
                 "exchange": hit.get("exchange", "")  if hit else "",
                 "country":  hit.get("country", "")   if hit else "",
+                "name_ja":  jp_name_for(hit["symbol"]) if hit else "",
                 "duplicate": False,
             })
             if sym:
@@ -239,7 +268,7 @@ def handle_fund(cv: dict | None, fund: dict) -> str:
         return "new_results"
 
     if action == "rows_update":
-        fund["ticker_rows"] = cv.get("rows", [])
+        fund["ticker_rows"] = _resolve_name_picks(cv.get("rows", []))
         fund["_sym_search_results"] = None
         return "rows_update"
 
@@ -327,7 +356,9 @@ body{
 
 /* ── Suggestion list ────────────────────────────── */
 .sug-list{
-  position:absolute;top:calc(100% + 3px);left:0;right:0;z-index:9999;
+  position:absolute;top:calc(100% + 3px);left:0;z-index:9999;
+  /* wider than the code column so company names are readable */
+  min-width:100%;width:max-content;max-width:min(360px,calc(100vw - 24px));
   background:var(--bg);border:1px solid var(--bdr);border-radius:0 0 7px 7px;
   box-shadow:0 6px 20px rgba(0,0,0,.13);overflow:hidden;
   max-height:240px;overflow-y:auto;list-style:none}
@@ -453,6 +484,8 @@ function safeRender(){
      So the very first render that shows suggestions is NOT deferred —
      only subsequent Streamlit reruns while suggestions are displayed. */
   if(_sugVisible||_sugHovered){ _deferredRender=true; return; }
+  /* rebuilding the <input> mid-IME-conversion would drop the conversion */
+  if(rows.some(r=>r.composing)){ _deferredRender=true; return; }
   _deferredRender=false;
   render();
 }
@@ -462,17 +495,28 @@ const COLS = 'minmax(80px,120px) 1fr minmax(68px,100px) 46px 76px 72px';
 /* ── Row factory ──────────────────────────────────── */
 function nr(inp=''){return{id:_rid++,inp,confirmed:false,
   symbol:'',name:'',exchange:'',country:'',
-  notFound:false,duplicate:false,searching:false,prev:null,sug:[],hi:-1};}
+  notFound:false,duplicate:false,searching:false,prev:null,sug:[],hi:-1,
+  name_ja:'',src:'',pick:false,composing:false};}
+/* display name: Japanese company name for JP stocks, else the Yahoo name.
+   (row.name stays the Yahoo name — it is what charts / Excel use) */
+const dispName=r=>r.name_ja||r.name||'';
 
 /* ── Tokeniser ────────────────────────────────────── */
-function tok(raw){
-  let s=raw.replace(/["'\u201c\u201d\u2018\u2019\u300c\u300d]/g,' ');
-  s=s.replace(/[,\u3001\u3002;|\t]+/g,' ');
-  s=s.replace(/\r\n/g,'\n').replace(/\r/g,'\n');
-  return s.split(/[\n\s]+/)
+/* Japanese = hiragana / katakana / kanji (same ranges as edinet_codelist.has_japanese) */
+const JA=/[぀-ヿ㐀-鿿豈-﫿ｦ-ﾟ々]/;
+function _tokCodes(s){
+  return s.split(/\s+/)
     .map(t=>t.replace(/^[^A-Za-z0-9\^]/,'')
              .replace(/[^A-Za-z0-9.\-\^]$/,'').toUpperCase())
     .filter(t=>t&&/^[A-Z0-9\^][A-Z0-9.\-\^]*$/.test(t));
+}
+function tok(raw){
+  let s=raw.replace(/["'“”‘’「」]/g,' ');
+  s=s.replace(/\r\n/g,'\n').replace(/\r/g,'\n');
+  /* Company names may contain spaces -> split names only on line/list separators */
+  return s.split(/[\n,、。;|\t]+/)
+    .flatMap(p=>JA.test(p) ? [p.trim()] : _tokCodes(p))
+    .filter(Boolean);
 }
 
 /* ── Debounce ──────────────────────────────────────── */
@@ -492,6 +536,20 @@ function _clearSugFor(row){
   row.sug=[];
   _sugVisible=rows.some(r=>(r.sug||[]).length>0);
   if(!_sugVisible&&_deferredRender){_deferredRender=false;render();}
+  else fitHeight();
+}
+/* Size the iframe to what is actually drawn: the table plus any open dropdown
+   (dropdowns are absolutely positioned, so they hang below the table) */
+let _lastH=-1;
+function fitHeight(){
+  let h=document.getElementById('root').getBoundingClientRect().bottom;
+  document.querySelectorAll('.sug-list').forEach(el=>{
+    h=Math.max(h,el.getBoundingClientRect().bottom);
+  });
+  h=Math.ceil(h)+8;
+  /* every setFrameHeight makes Streamlit re-send props (→ render()),
+     so only post real changes */
+  if(h!==_lastH){ _lastH=h; ST.h(h); }
 }
 function _buildSugHtml(row){
   const sg=row.sug||[],hi=row.hi;
@@ -501,7 +559,7 @@ function _buildSugHtml(row){
     onmouseenter="_sugHovered=true"
     onmouseleave="_sugHovered=false;if(_deferredRender&&!_sugVisible)render()">`;
   sg.forEach((s,si)=>{
-    const nm=s.name||(s.exchange||s.country||'');
+    const nm=dispName(s)||(s.exchange||s.country||'');
     const disp=nm.length>28?nm.slice(0,26)+'…':nm;
     h+=`<li class="sug-item${si===hi?' hi':''}"
       onmousedown="pickSug(${row.id},${si})">
@@ -519,6 +577,7 @@ function _renderSuggestionsFor(row){
   wrap.innerHTML=_buildSugHtml(row);
   if(ind) ind.style.display='none';
   _sugVisible=(row.sug||[]).length>0;
+  fitHeight();
 }
 function pickSug(rowId,si){
   const row=rows.find(r=>r.id===rowId);
@@ -526,10 +585,17 @@ function pickSug(rowId,si){
   if(row&&s) confirmRow(row,s);
 }
 function confirmRow(row,s){
-  Object.assign(row,{confirmed:true,symbol:s.symbol,name:s.name||'',
+  Object.assign(row,{confirmed:true,symbol:s.symbol,name:s.name||'',name_ja:s.name_ja||'',
     exchange:s.exchange||'',country:s.country||'',
     inp:s.symbol,notFound:false,duplicate:false,searching:false,
-    sug:[],hi:-1,prev:null});
+    sug:[],hi:-1,prev:null,src:s.src||'',pick:false});
+  /* pasted company names waiting for a pick → move on to the next one */
+  const nextPick=rows.find(r=>r.pick&&!r.confirmed);
+  if(nextPick){
+    render();notifyRows();
+    setTimeout(()=>{const el=document.getElementById('i'+nextPick.id);if(el)el.focus();},30);
+    return;
+  }
   /* auto-add new empty row when confirming the last row */
   const isLast=rows[rows.length-1].id===row.id;
   if(isLast){
@@ -539,22 +605,28 @@ function confirmRow(row,s){
 }
 function notifyRows(){
   ST.val({action:'rows_update', rows:rows.map(r=>({
-    id:r.id,symbol:r.symbol,name:r.name,exchange:r.exchange,
+    id:r.id,
+    /* a pasted name still waiting for a pick keeps its text, so the
+       run button treats it as unconfirmed instead of silently skipping it */
+    symbol:(!r.confirmed&&r.pick)?r.inp:r.symbol,
+    name:r.name,name_ja:r.name_ja||'',exchange:r.exchange,
     country:r.country,confirmed:r.confirmed,
-    notFound:r.notFound,duplicate:r.duplicate,
+    notFound:r.notFound,duplicate:r.duplicate,src:r.src||'',
   }))});
 }
 
-/* ── Return key: confirm top or fire search_now ──── */
+/* ── Return key: confirm highlighted or fire search ─ */
 function onReturn(row){
   if(row.sug.length>0){
-    confirmRow(row, row.sug[0]); return;
+    confirmRow(row, row.sug[row.hi>=0?row.hi:0]); return;
   }
   const q=row.inp.trim().toUpperCase();
   if(!q) return;
+  clearTimeout(tmr['s'+row.id]);
   row.searching=true; render();
   seq++;
-  ST.val({action:'search_now', query:q, row_id:row.id, seq});
+  /* code → search & auto-confirm top; company name → only show candidates */
+  ST.val({action:JA.test(q)?'search':'search_now', query:q, row_id:row.id, seq});
 }
 
 /* ── Paste event ────────────────────────────────────── */
@@ -590,6 +662,9 @@ function onPaste(row, e){
 /* ── Input handler ──────────────────────────────────── */
 function onInp(row, val){
   row.inp=val; row.notFound=false; row.duplicate=false;
+  /* IME conversion in progress → wait for compositionend (a rerun mid-
+     conversion would wipe the text being converted) */
+  if(row.composing) return;
   if(!val.trim()){row.sug=[];row.searching=false;_clearSugFor(row);return;}
   row.searching=true;
   _showSpinner(row); /* surgical: only spinner, no full re-render */
@@ -599,14 +674,40 @@ function onInp(row, val){
   }, 300);
 }
 
+/* ── IME composition ────────────────────────────────── */
+/* Composition events have no on* HTML attribute → delegate from document
+   (inputs are recreated by every render()) */
+const _rowOf=el=>(el&&el.classList&&el.classList.contains('sym-inp'))
+  ? rows.find(r=>'i'+r.id===el.id) : null;
+document.addEventListener('compositionstart',e=>{
+  const row=_rowOf(e.target); if(row) row.composing=true;
+});
+document.addEventListener('compositionend',e=>{
+  const row=_rowOf(e.target); if(!row) return;
+  row.composing=false;
+  const val=e.target.value;
+  if(_deferredRender&&!_sugVisible){ _deferredRender=false; render(); }
+  onInp(row, val);
+});
+
+/* ── Focus: pasted name waiting for a pick → show its candidates ─ */
+function onFoc(row){
+  if(!row||!row.pick||row.confirmed||row.sug.length||!row.inp.trim()) return;
+  row.searching=true; _showSpinner(row);
+  seq++;
+  ST.val({action:'search', query:row.inp.trim().toUpperCase(), row_id:row.id, seq});
+}
+
 /* ── Keyboard ────────────────────────────────────────── */
 function onKd(e,row){
+  /* Enter that commits an IME conversion is not a "confirm" */
+  if(e.isComposing||e.keyCode===229) return;
   if(e.key==='Enter'){e.preventDefault();onReturn(row);return;}
   if(e.key==='Escape'){row.sug=[];render();return;}
   if(e.key==='ArrowDown'){e.preventDefault();
-    row.hi=Math.min(row.hi+1,(row.sug.length||1)-1);render();return;}
+    row.hi=Math.min(row.hi+1,(row.sug.length||1)-1);_renderSuggestionsFor(row);return;}
   if(e.key==='ArrowUp'){e.preventDefault();
-    row.hi=Math.max(row.hi-1,0);render();return;}
+    row.hi=Math.max(row.hi-1,0);_renderSuggestionsFor(row);return;}
 }
 
 /* ── Row ops ─────────────────────────────────────────── */
@@ -621,7 +722,7 @@ function addRow(){
   setTimeout(()=>{const el=document.getElementById('i'+r.id);if(el)el.focus();},0);
 }
 function enterEdit(row){
-  row.prev={symbol:row.symbol,name:row.name,exchange:row.exchange,country:row.country};
+  row.prev={symbol:row.symbol,name:row.name,name_ja:row.name_ja,exchange:row.exchange,country:row.country};
   row.confirmed=false; row.inp=row.symbol; row.sug=[];
   render();
   setTimeout(()=>{const el=document.getElementById('i'+row.id);
@@ -665,7 +766,7 @@ function render(){
         title="${ea(T('hint_dblclick'))}">${esc(row.symbol)}</span>`;
       h+=`
       <div class="td">${chip}</div>
-      <div class="td"><span class="td-text">${esc(row.name)}</span></div>
+      <div class="td"><span class="td-text">${esc(dispName(row))}</span></div>
       <div class="td"><span class="td-meta">${esc(row.exchange)}</span></div>
       <div class="td"><span class="td-meta">${esc(row.country)}</span></div>
       <div class="td"><span class="b-ok">✓ ${esc(T('status_confirmed_short'))}</span></div>
@@ -683,6 +784,7 @@ function render(){
       let badge='';
       if(row.notFound)  badge=`<div class="b-err">${esc(T('status_not_found'))}</div>`;
       if(row.duplicate) badge=`<div class="b-dup">⚠ ${esc(T('status_duplicate')||'重複')}</div>`;
+      if(row.pick)      badge=`<div class="b-dup">${esc(T('status_pick'))}</div>`;
 
       h+=`
       <div class="td" style="position:relative;overflow:visible;z-index:${zi}">
@@ -693,7 +795,8 @@ function render(){
               placeholder="${ea(T('placeholder_symbol'))}"
               oninput="onInp(rows.find(r=>r.id===${row.id}),this.value)"
               onkeydown="onKd(event,rows.find(r=>r.id===${row.id}))"
-              onblur="(()=>{const r=rows.find(x=>x.id===${row.id});if(r){setTimeout(()=>{r.sug=[];_sugHovered=false;_sugVisible=false;_deferredRender=false;_clearSugFor(r);},150);}})()"
+              onfocus="onFoc(rows.find(r=>r.id===${row.id}))"
+              onblur="(()=>{const r=rows.find(x=>x.id===${row.id});if(r){setTimeout(()=>{const a=document.activeElement;if(a&&a.id==='i'+r.id)return;r.sug=[];_sugHovered=false;_sugVisible=false;_deferredRender=false;_clearSugFor(r);},150);}})()"
               onpaste="onPaste(rows.find(r=>r.id===${row.id}),event)"
               autocomplete="off" spellcheck="false">
             <div id="sugwrap_${row.id}"></div>
@@ -716,7 +819,10 @@ function render(){
   h+=`</div>
   <button class="add-btn" onclick="addRow()" title="${ea(T('btn_add_symbol'))}">＋</button>`;
   document.getElementById('root').innerHTML=h;
-  ST.h(42+rows.length*52+40+(hasSug?220:0)+8);
+  /* keep the open dropdown of the focused input (a rebuild must not hide it) */
+  const fr=fid&&rows.find(r=>'i'+r.id===fid&&!r.confirmed&&(r.sug||[]).length);
+  if(fr){ const w=document.getElementById('sugwrap_'+fr.id); if(w) w.innerHTML=_buildSugHtml(fr); }
+  fitHeight();
   /* track whether suggestions are now visible in DOM */
   _sugVisible=hasSug;
 
@@ -746,6 +852,7 @@ function onRender(a, theme){
           id:r.id!==undefined?r.id:_rid-1,
           confirmed:!!r.confirmed, symbol:r.symbol||'',
           name:r.name||'',exchange:r.exchange||'',country:r.country||'',
+          name_ja:r.name_ja||'',src:r.src||'',
         }))
       : [nr()];
     _rid=Math.max(_rid,...rows.map(r=>r.id+1));
@@ -763,6 +870,9 @@ function onRender(a, theme){
         row.searching=false;
         row.sug=sr.results||[];
         row.hi=row.sug.length?0:-1;
+        /* pasted name with no candidates any more → plain "not found" row
+           (also stops onFoc from re-searching on every focus restore) */
+        if(row.pick&&!row.sug.length){row.pick=false;row.notFound=true;}
         if(sr.auto_confirm && row.sug.length>0){
           _needsRender=false;
           confirmRow(row, row.sug[0]); return;
@@ -779,9 +889,13 @@ function onRender(a, theme){
         row.searching=false;
         if(item.duplicate){
           row.duplicate=true;row.notFound=false;
+        } else if(item.pick){
+          /* company name: never auto-confirmed — user picks from candidates */
+          row.pick=true;row.notFound=false;
+          changed=true;
         } else if(item.symbol){
           Object.assign(row,{confirmed:true,symbol:item.symbol,
-            name:item.name||'',exchange:item.exchange||'',
+            name:item.name||'',name_ja:item.name_ja||'',exchange:item.exchange||'',
             country:item.country||'',inp:item.symbol,
             notFound:false,duplicate:false,sug:[],hi:-1});
           changed=true;
@@ -790,6 +904,12 @@ function onRender(a, theme){
         }
       }
       if(changed) notifyRows();
+      /* open the first pasted name's candidates */
+      const firstPick=rows.find(r=>r.pick&&!r.confirmed);
+      if(firstPick){
+        _needsRender=false; render();
+        setTimeout(()=>{const el=document.getElementById('i'+firstPick.id);if(el)el.focus();},30);
+      }
     }
   }
   if(_needsRender) safeRender();

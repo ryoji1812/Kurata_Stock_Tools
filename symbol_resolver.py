@@ -20,6 +20,7 @@ import requests
 import streamlit as st
 import yfinance as yf
 from bs4 import BeautifulSoup
+from edinet_codelist import has_japanese, search_jp_names, jp_name_for
 
 # ── Constants ──────────────────────────────────────────────────────────────────
 YAHOO_SEARCH_URL = "https://query2.finance.yahoo.com/v1/finance/search"
@@ -186,6 +187,17 @@ def _merge(base: list[dict], extra: list[dict]) -> list[dict]:
 # ── Public API ─────────────────────────────────────────────────────────────────
 
 def search_suggestions(query: str, preferred_country: str, count: int = 20) -> list[dict]:
+    """_search_suggestions + 日本株には表示用の日本語名（name_ja）を付ける。
+
+    name（Yahoo の名前）は出力用にそのまま残す。
+    """
+    results = _search_suggestions(query, preferred_country, count)
+    for c in results:
+        c.setdefault("name_ja", jp_name_for(c.get("symbol", "")))
+    return results
+
+
+def _search_suggestions(query: str, preferred_country: str, count: int = 20) -> list[dict]:
     """
     Search Yahoo Finance and return a prioritised list of equity candidates.
 
@@ -198,6 +210,10 @@ def search_suggestions(query: str, preferred_country: str, count: int = 20) -> l
     """
     if not query:
         return []
+
+    # 0. 日本語の銘柄名 → EDINET コードリストで検索（Yahoo 検索は日本語不可）
+    if has_japanese(query):
+        return search_jp_names(query)
 
     prioritized: list[dict] = []
 
@@ -385,6 +401,20 @@ def _yf_direct_lookup(symbol: str) -> dict | None:
                 "exchange": exch.upper(), "country": "", "score": 0}
     except Exception:
         return None
+
+
+@st.cache_data(ttl=86400, show_spinner=False)
+def resolve_edinet_pick(symbol: str) -> dict | None:
+    """銘柄名検索で選んだ銘柄を、証券コード入力時と同じ Yahoo の情報に置き換える。
+
+    出力（グラフ・Excel）の銘柄名を証券コード入力時と揃えるため、
+    4 桁コードで通常の検索を行い、同じ symbol の候補を返す。
+    """
+    code = re.sub(r"\.[A-Za-z]+$", "", symbol)
+    for c in search_suggestions(code, "JP"):
+        if c["symbol"].upper() == symbol.upper():
+            return c
+    return None
 
 
 def best_match(query: str, preferred_country: str) -> dict | None:
