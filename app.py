@@ -51,6 +51,7 @@ _EXTRA = {
         "status_searching":       "検索中…",
         "status_duplicate":       "重複",
         "msg_duplicate":          "重複のため除外されました",
+        "status_pick":            "候補から選んでください",
     },
     "EN": {
         "hint_dblclick":          "Click to edit",
@@ -60,6 +61,7 @@ _EXTRA = {
         "status_searching":       "Searching…",
         "status_duplicate":       "Duplicate",
         "msg_duplicate":          "Duplicate — skipped",
+        "status_pick":            "Pick from the suggestions",
     },
 }
 
@@ -731,6 +733,8 @@ def main():
         with st.spinner(""): _analyse()
         st.rerun()
     _results()
+    st.divider()
+    st.caption(_T("edinet_attribution"))
 
 if __name__ == "__main__":
     main()
