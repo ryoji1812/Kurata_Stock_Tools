@@ -2,12 +2,12 @@
 
 
 <p align="center">
-  <a href="https://maysak-mayjet-stocksharpekit.streamlit.app/">
+  <a href="https://kurata.streamlit.app/">
     <img src="https://static.streamlit.io/badges/streamlit_badge_black_white.svg">
   </a>
 </p>
 
-## Demo : [アプリを開く](https://maysak-mayjet-stocksharpekit.streamlit.app/)
+## Demo : [アプリを開く](https://kurata.streamlit.app/)
 
 
 現代ポートフォリオ理論（MPT）に基づき、**シャープレシオを最大化する最適な資産配分**を求める株式ポートフォリオ分析ツールです。
