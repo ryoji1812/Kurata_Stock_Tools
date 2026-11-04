@@ -3,6 +3,8 @@ app.py — Max Sharpe Portfolio Analyzer
 Run:  streamlit run app.py
 """
 from __future__ import annotations
+import json
+import uuid
 from datetime import date, datetime, timedelta
 from pathlib import Path
 import pandas as pd
@@ -74,13 +76,29 @@ def _labels(lang): return {**_L.get(lang,_L["JP"]), **_EXTRA.get(lang,_EXTRA["JP
 def _new_fund(idx: int = 1) -> dict:
     """Create a blank fund dict."""
     return {
-        "id": id(object()),  # unique id
+        # Widget keys are built from this id (not the tab index), so deleting a
+        # fund can't shift another fund's widgets. (id(object()) repeats values.)
+        "id": uuid.uuid4().hex,
         "name": f"{_T('fund_default_name')} {idx}",
         "ticker_rows": [],
         "_sym_last_seq": -9999,
         "_sym_search_results": None,
         "_dup_notice": [],
     }
+
+
+def _fund_widget_keys(fid: str) -> list[str]:
+    """Session-state keys of the widgets that belong to one fund."""
+    return [f"fund_name_{fid}", f"_cp_fund_{fid}", f"_sel_fund_style_{fid}", f"sym_fund_{fid}"]
+
+
+def _ensure_fund_ids(funds: list[dict]) -> None:
+    """Give every fund a unique id (sessions created before ids were unique)."""
+    seen: set = set()
+    for f in funds:
+        if not isinstance(f.get("id"), str) or f["id"] in seen:
+            f["id"] = uuid.uuid4().hex
+        seen.add(f["id"])
 
 
 def _init():
@@ -106,6 +124,7 @@ def _init():
     # Initialize funds list with one default fund
     if st.session_state.funds is None:
         st.session_state.funds = [_new_fund(1)]
+    _ensure_fund_ids(st.session_state.funds)
 
     # 旧セッションで start_date が None のまま残っている場合の救済
     if st.session_state.start_date is None:
@@ -191,6 +210,90 @@ _DATE_JS = """
 
 def _inject_date_js():
     components.html(_DATE_JS, height=0)
+
+
+# ── Fund tab "×" buttons ──────────────────────────────────────────────────────
+# st.tabs() has no close button, so a "×" is inserted into each fund tab of the
+# parent page. Clicking it clicks that fund's hidden st.button
+# (key fund_close_<id>), which opens the confirm dialog on the Python side.
+# The installer runs in the parent page's realm (window.parent.Function) and a
+# MutationObserver re-inserts the "×" whenever Streamlit re-renders the tabs;
+# each rerun only refreshes the fund-id list (window.__kstTabClose.fids).
+_TAB_CLOSE_INSTALL = r"""
+if (!window.__kstTabClose) {
+  const S = window.__kstTabClose = { fids: [], hint: '' };
+  // role="tablist" is the ARIA role, stable across Streamlit's tab implementations
+  const fundList = () => [...document.querySelectorAll('[role="tablist"]')]
+    .find(l => { const t = l.querySelector('[role="tab"]');
+                 return t && /^(ファンド|Fund) 1$/.test(t.innerText.replace('×', '').trim()); });
+  S.apply = () => {
+    const list = fundList();
+    if (!list) return;
+    const tabs = [...list.querySelectorAll('[role="tab"]')];
+    tabs.forEach((tab, i) => {
+      let x = tab.querySelector(':scope .kst-x');
+      const fid = (S.fids.length > 1 && i < S.fids.length) ? S.fids[i] : null;
+      if (!fid) { if (x) x.remove(); return; }
+      if (!x) {
+        x = document.createElement('span');
+        x.className = 'kst-x'; x.textContent = '×'; x.setAttribute('role', 'button');
+        const stop = e => { e.preventDefault(); e.stopPropagation(); };
+        ['pointerdown', 'mousedown', 'mouseup'].forEach(t => x.addEventListener(t, stop));
+        x.addEventListener('click', e => {
+          stop(e);
+          const b = document.querySelector('.st-key-fund_close_' + x.dataset.fid + ' button');
+          if (b) b.click();
+        });
+        tab.appendChild(x);
+      }
+      if (x.dataset.fid !== fid) x.dataset.fid = fid;
+      if (x.title !== S.hint) x.title = S.hint;
+    });
+  };
+  new MutationObserver(() => S.apply())
+    .observe(document.body, { subtree: true, childList: true });
+}
+"""
+
+
+def _inject_tab_close_js(fund_ids: list[str], hint: str) -> None:
+    components.html(f"""<script>
+    (function () {{
+      const P = window.parent;
+      P.Function({json.dumps(_TAB_CLOSE_INSTALL)})();
+      P.__kstTabClose.fids = {json.dumps(fund_ids)};
+      P.__kstTabClose.hint = {json.dumps(hint)};
+      P.__kstTabClose.apply();
+    }})();
+    </script>""", height=0)
+
+
+def _delete_fund(fid: str) -> None:
+    funds = st.session_state.funds
+    st.session_state.funds = [f for f in funds if f["id"] != fid]
+    for k in _fund_widget_keys(fid):
+        st.session_state.pop(k, None)
+
+
+def _confirm_delete_fund(fid: str) -> None:
+    fund = next((f for f in st.session_state.funds if f["id"] == fid), None)
+    if fund is None:
+        return
+    n_confirmed = sum(1 for r in fund.get("ticker_rows", []) if r.get("confirmed"))
+
+    @st.dialog(_T("dlg_del_fund_title"))
+    def _dialog():
+        st.write(_T("msg_del_fund_confirm").format(name=fund["name"], n=n_confirmed))
+        c_ok, c_cancel = st.columns(2)
+        if c_ok.button(_T("btn_del_fund"), type="primary", key="dlg_del_fund_ok",
+                       use_container_width=True):
+            _delete_fund(fid)
+            st.rerun()
+        if c_cancel.button(_T("btn_cancel"), key="dlg_del_fund_cancel",
+                           use_container_width=True):
+            st.rerun()
+
+    _dialog()
 
 
 def _top_bar():
@@ -328,6 +431,22 @@ def _fund_tabs():
     st.markdown(
         """
         <style>
+        /* Hidden per-fund delete buttons — clicked by the tab "×" (see
+           _TAB_CLOSE_INSTALL); kept in the DOM but never shown. */
+        [class*="st-key-fund_close_"] { display: none !important; }
+
+        /* "×" inside each fund tab */
+        .kst-x {
+            margin-left: 0.45rem;
+            padding: 0 0.3rem;
+            border-radius: 4px;
+            font-size: 0.95em;
+            line-height: 1.2;
+            opacity: 0.5;
+            cursor: pointer;
+        }
+        .kst-x:hover { opacity: 1; background: rgba(128, 128, 128, 0.22); }
+
         /* Eliminate the flex gap contribution of style-only markdown blocks.
            Note: ":only-child" can't be used because indentation whitespace in
            the Python string creates text nodes around the <style> tag — the
@@ -368,17 +487,24 @@ def _fund_tabs():
         funds.append(_new_fund(len(funds) + 1))
         st.rerun()
 
+    # Hidden delete triggers for the tab "×" (no "×" when only one fund)
+    if n_funds > 1:
+        for f in funds:
+            if st.button("×", key=f"fund_close_{f['id']}"):
+                _confirm_delete_fund(f["id"])
+
     tabs = st.tabs(tab_labels)
 
     # ── Fund tabs ─────────────────────────────────────────────────────────
     for i in range(n_funds):
         with tabs[i]:
             fund = funds[i]
+            fid  = fund["id"]  # widget keys follow the fund, not the tab position
 
             # Fund name — widget key is the source of truth.
             # Sync to fund dict only via the key read, never triggering a
             # label-changing rerun.
-            _fname_key = f"fund_name_{i}"
+            _fname_key = f"fund_name_{fid}"
             st.text_input(
                 _T("fund_name_label"),
                 value=fund["name"],
@@ -389,8 +515,8 @@ def _fund_tabs():
             fund["name"] = st.session_state.get(_fname_key, fund["name"])
 
             # Chart style (color + line style) in expander
-            c_key = f"_cp_fund_{i}"
-            s_key = f"_sel_fund_style_{i}"
+            c_key = f"_cp_fund_{fid}"
+            s_key = f"_sel_fund_style_{fid}"
             c_default = _FUND_COLORS[i % len(_FUND_COLORS)]
             c_val = st.session_state.get(c_key, c_default)
             s_val = st.session_state.get(s_key, "solid")
@@ -417,7 +543,7 @@ def _fund_tabs():
                 country        = country,
                 labels         = _labels(lang),
                 search_results = fund.get("_sym_search_results"),
-                key            = f"sym_fund_{i}",
+                key            = f"sym_fund_{fid}",
             )
 
             action = handle_fund(cv, fund)
@@ -429,13 +555,6 @@ def _fund_tabs():
             dupes = fund.pop("_dup_notice", []) if isinstance(fund.get("_dup_notice"), list) else []
             if dupes:
                 st.toast(f"⚠️ {', '.join(dupes)} — {_T('msg_duplicate')}", icon="⚠️")
-
-            # Delete button (only if more than one fund)
-            if len(funds) > 1:
-                st.divider()
-                if st.button(_T("btn_del_fund"), key=f"fund_del_{i}", type="secondary"):
-                    funds.pop(i)
-                    st.rerun()
 
     # ── Benchmark tabs (fixed, style-only) ────────────────────────────────
     _BENCH_STYLE_DEFAULTS = ["dashed", "dotted", "dashdot", "solid", "dashed"]
@@ -468,6 +587,11 @@ def _fund_tabs():
     st.session_state.color_bench = bench_colors
     st.session_state.style_bench = bench_styles
 
+    # "×" on fund tabs (after the tabs so the 0-height iframe can't shift the
+    # "+" overlay); an empty id list removes them when only one fund is left
+    _inject_tab_close_js([f["id"] for f in funds] if n_funds > 1 else [],
+                         _T("hint_close_fund"))
+
 
 def _bench_names() -> list[str]:
     """Return display names for index benchmarks."""
@@ -490,10 +614,11 @@ def _get_custom_colors() -> dict:
     funds = st.session_state.funds
     fund_colors = []
     fund_styles = []
-    for i in range(len(funds)):
+    for i, fund in enumerate(funds):
+        fid = fund["id"]
         fund_colors.append(st.session_state.get(
-            f"_cp_fund_{i}", _FUND_COLORS_DEFAULT[i % len(_FUND_COLORS_DEFAULT)]))
-        fund_styles.append(st.session_state.get(f"_sel_fund_style_{i}", "solid"))
+            f"_cp_fund_{fid}", _FUND_COLORS_DEFAULT[i % len(_FUND_COLORS_DEFAULT)]))
+        fund_styles.append(st.session_state.get(f"_sel_fund_style_{fid}", "solid"))
     return {
         "fund_colors": fund_colors,
         "fund_styles": fund_styles,
