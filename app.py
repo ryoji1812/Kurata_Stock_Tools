@@ -726,8 +726,6 @@ def _analyse():
         chart_bytes = {
             "cumulative_return_summary.png":    cm.mpl_cum_bar(res, L, custom=cc),
             "cumulative_return_timeseries.png": cm.mpl_cum_line(res, L, custom=cc),
-            "rolling_sharpe.png":               cm.mpl_rolling_sharpe(res, L, custom=cc),
-            "drawdown.png":                     cm.mpl_drawdown(res, L, custom=cc),
         }
         # Per-fund efficient frontier charts
         for fi, fr in enumerate(res.funds):
@@ -821,16 +819,6 @@ def _results():
     try: st.altair_chart(ca.chart_cum_line(res, L, custom_colors=cc), use_container_width=True)
     except Exception as e: st.warning(str(e))
     _dl("cumulative_return_timeseries.png")
-
-    st.divider(); _sec("section_rolling", "desc_rolling")
-    try: st.altair_chart(ca.chart_rolling_sharpe(res, L, custom_colors=cc), use_container_width=True)
-    except Exception as e: st.warning(str(e))
-    _dl("rolling_sharpe.png")
-
-    st.divider(); _sec("section_drawdown", "desc_drawdown")
-    try: st.altair_chart(ca.chart_drawdown(res, L, custom_colors=cc), use_container_width=True)
-    except Exception as e: st.warning(str(e))
-    _dl("drawdown.png")
 
     st.divider(); st.subheader(_T("btn_download_all"))
     json_b = build_output_json(res, L)

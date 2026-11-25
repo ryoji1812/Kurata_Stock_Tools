@@ -122,13 +122,6 @@ _L: dict[str, dict[str, str]] = {
         ),
         "section_cum_line": "累積リターン推移",
         "desc_cum_line":    "投資開始時を0%として時系列のリターン推移を表します。",
-        "section_rolling":  "ローリング・シャープレシオ（12ヶ月窓）",
-        "desc_rolling": (
-            "直近12ヶ月のリスクあたりリターンの推移です。"
-            "0を下回る期間は損失局面を示します。"
-        ),
-        "section_drawdown": "ドローダウン推移",
-        "desc_drawdown":    "過去のピークからの下落率を時系列で示します。深いほど大きな損失局面です。",
         # ── DataFrame columns ──────────────────────────────────────────────
         "col_portfolio":   "ポートフォリオ/指数",
         "col_sharpe":      "シャープレシオ",
@@ -145,8 +138,6 @@ _L: dict[str, dict[str, str]] = {
         # ── Chart axis / legend labels ─────────────────────────────────────
         "chart_date":           "日付",
         "chart_cum_ret":        "累積リターン (%)",
-        "chart_sharpe":         "シャープレシオ",
-        "chart_drawdown_pct":   "ドローダウン (%)",
         "chart_risk":           "年率ボラティリティ (%)",
         "chart_return":         "年率期待リターン (%)",
         "chart_weight_pct":     "投資比率 (%)",
@@ -164,10 +155,6 @@ _L: dict[str, dict[str, str]] = {
         "ef_xlabel":      "年率ボラティリティ (%)",
         "ef_ylabel":      "年率期待リターン (%)",
         "cum_line_title": "累積リターン推移",
-        "roll_title":     "ローリング・シャープレシオ（{w}ヶ月窓）",
-        "roll_ylabel":    "シャープレシオ",
-        "dd_title":       "ドローダウン推移",
-        "dd_ylabel":      "ドローダウン (%)",
         # ── Download buttons ──────────────────────────────────────────────
         "btn_download_png":   "📥 グラフをダウンロード (.png)",
         "btn_download_all":   "📦 全ファイルをダウンロード (.zip)",
@@ -301,13 +288,6 @@ _L: dict[str, dict[str, str]] = {
         ),
         "section_cum_line": "Cumulative Return Over Time",
         "desc_cum_line":    "Return evolution from 0% at start date.",
-        "section_rolling":  "Rolling Sharpe Ratio (12-month window)",
-        "desc_rolling": (
-            "12-month rolling risk-adjusted returns. "
-            "Values below 0 indicate a loss period."
-        ),
-        "section_drawdown": "Drawdown",
-        "desc_drawdown":    "Percentage decline from the prior peak at each point in time. Deeper = larger loss.",
         "col_portfolio":   "Portfolio/Index",
         "col_sharpe":      "Sharpe Ratio",
         "col_ann_return":  "Annual Return",
@@ -322,8 +302,6 @@ _L: dict[str, dict[str, str]] = {
         "col_total":       "Total",
         "chart_date":           "Date",
         "chart_cum_ret":        "Cumulative Return (%)",
-        "chart_sharpe":         "Sharpe Ratio",
-        "chart_drawdown_pct":   "Drawdown (%)",
         "chart_risk":           "Annual Volatility (%)",
         "chart_return":         "Expected Annual Return (%)",
         "chart_weight_pct":     "Weight (%)",
@@ -340,10 +318,6 @@ _L: dict[str, dict[str, str]] = {
         "ef_xlabel":      "Annual Volatility (%)",
         "ef_ylabel":      "Expected Annual Return (%)",
         "cum_line_title": "Cumulative Return Over Time",
-        "roll_title":     "Rolling Sharpe Ratio ({w}-month window)",
-        "roll_ylabel":    "Sharpe Ratio",
-        "dd_title":       "Drawdown",
-        "dd_ylabel":      "Drawdown (%)",
         "btn_download_png":   "📥 Download Chart (.png)",
         "btn_download_all":   "📦 Download All Files (.zip)",
         "download_xlsx":      "📊 Download Excel",
