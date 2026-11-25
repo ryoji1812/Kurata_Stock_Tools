@@ -22,7 +22,7 @@ _L: dict[str, dict[str, str]] = {
         "label_end_date":       "分析終了日",
         # ── Advanced settings ──────────────────────────────────────────────
         "section_period":      "📅 期間設定",
-        "section_period_settings": "分析期間・設定",
+        "section_period_settings": "📅 分析期間・設定",
         "section_advanced":    "⚙️ 詳細設定",
         "label_risk_free_rate": "無リスク金利",
         "desc_risk_free_rate":  "シャープレシオ計算に使う金利（% で入力）",
@@ -192,7 +192,7 @@ _L: dict[str, dict[str, str]] = {
         "label_start_date":     "Start Date",
         "label_end_date":       "End Date",
         "section_period":      "📅 Analysis Period",
-        "section_period_settings": "Analysis Period & Settings",
+        "section_period_settings": "📅 Analysis Period & Settings",
         "section_advanced":    "⚙️ Advanced Settings",
         "label_risk_free_rate": "Risk-Free Rate",
         "desc_risk_free_rate":  "Rate used for Sharpe ratio calculation (enter as %)",
