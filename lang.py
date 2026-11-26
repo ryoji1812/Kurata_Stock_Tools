@@ -34,7 +34,7 @@ _L: dict[str, dict[str, str]] = {
         "label_mdd_threshold":  "最大ドローダウン閾値",
         "desc_mdd_threshold":   "これを超える下落率の銘柄を効率的フロンティア上で赤くハイライト（除外はしない）",
         "label_min_months":     "短期銘柄判定（月数）",
-        "desc_min_months":      "この月数未満のデータしかない銘柄を短期銘柄として点線表示",
+        "desc_min_months":      "この月数未満のデータしかない銘柄を、効率的フロンティアの図でオレンジの三角形（短期銘柄）として表示",
         # ── Symbol input ───────────────────────────────────────────────────
         "section_symbols":    "📋 銘柄入力",
         "sym_table_hint":     "証券コードまたは日本株の銘柄名（例: トヨタ）を入力し、候補から選んで確定してください。複数を「,」や改行で区切って一度に貼り付けることもできます。",
@@ -203,7 +203,7 @@ _L: dict[str, dict[str, str]] = {
         "label_mdd_threshold":  "MDD Threshold",
         "desc_mdd_threshold":   "Assets exceeding this drawdown are highlighted red on the frontier (not excluded)",
         "label_min_months":     "Short-term Threshold (months)",
-        "desc_min_months":      "Assets with fewer months of data are shown as dashed lines",
+        "desc_min_months":      "Assets with fewer months of data are shown as orange triangles (Short-term Asset) on the efficient frontier chart",
         "section_symbols":    "📋 Stock Symbols",
         "sym_table_hint":     "Enter ticker symbols (or a Japanese company name, e.g. トヨタ) and select from suggestions to confirm. You can paste multiple entries separated by commas or new lines.",
         "edinet_attribution": "Company-name search uses the EDINET Code List published by EDINET (Financial Services Agency of Japan), processed for this app. "

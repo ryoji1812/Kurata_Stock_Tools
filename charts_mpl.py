@@ -84,6 +84,7 @@ def mpl_cum_bar(result: AnalysisResult, L: dict, custom: dict | None = None) -> 
     df[L["col_cum_return"]] = (
         df[L["col_cum_return"]].astype(str)
         .str.replace("%", "", regex=False).astype(float)
+        * 100   # stored as a fraction (1.12 = 112%)
     )
     df = df.sort_values(L["col_cum_return"], ascending=False)
 
