@@ -39,6 +39,11 @@ class FundResult:
     portfolio_returns:  pd.Series
     mu:                 pd.Series
     S:                  pd.DataFrame
+    # Data-length diagnostics (months of price data)
+    period_months:      int = 0                # months in the analysis period
+    risk_months:        int = 0                # months used for the covariance
+    risk_zero_filled:   bool = False           # missing months were filled with 0%
+    data_months:        dict[str, int] = field(default_factory=dict)
 
 
 @dataclass
@@ -354,7 +359,9 @@ def run_analysis(
             prices[f_tickers], frequency=12, compounding=False
         )
         _ret_cov = fund_returns.dropna()
+        risk_zero_filled = False
         if len(_ret_cov) < max(12, len(f_tickers) + 1):
+            risk_zero_filled = bool(fund_returns.isna().any().any())
             _ret_cov = fund_returns.fillna(0)
         S = risk_models.CovarianceShrinkage(
             _ret_cov, returns_data=True, frequency=12
@@ -405,6 +412,11 @@ def run_analysis(
             portfolio_returns  = pf_returns,
             mu                 = mu,
             S                  = S,
+            # Counted in months of prices (n returns = n + 1 prices), as in month_counts
+            period_months      = int(prices[f_tickers].notna().any(axis=1).sum()),
+            risk_months        = len(_ret_cov) + 1,
+            risk_zero_filled   = risk_zero_filled,
+            data_months        = {t: int(month_counts[t]) for t in f_tickers},
         ))
 
     # ── Step 8: Risk metrics + comparison table ───────────────────────────

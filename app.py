@@ -24,6 +24,7 @@ from downloads import (
 from cloud_backup import upload_to_drive_async
 from charts_altair import DEFAULT_COLORS as _ALT_DEFAULTS, DEFAULT_STYLES as _ALT_STYLE_DEFAULTS
 from analysis import _load_benchmarks
+from edinet_codelist import jp_name_for
 
 st.set_page_config(
     page_title="Kurata Stock Tools",
@@ -745,6 +746,37 @@ def _dl(f):
     d = st.session_state.chart_bytes.get(f, b"")
     if d: st.download_button(_T("btn_download_png"), d, f, "image/png", key=f"dl_{f}")
 
+def _data_period_notes(res):
+    """[(fund_name, "warning"|"error", markdown)] for funds whose risk estimate
+    could not use the whole analysis period."""
+    jp = st.session_state.lang == "JP"
+    notes = []
+    for fr in res.funds:
+        months  = getattr(fr, "data_months", None) or {}
+        period  = getattr(fr, "period_months", 0)
+        risk    = getattr(fr, "risk_months", 0)
+        if not months or not period:
+            continue
+        missing = sorted((t for t, n in months.items() if n < period), key=lambda t: months[t])
+        if getattr(fr, "risk_zero_filled", False):
+            level, key, shown = "error", "data_note_zero", missing
+        elif risk < period and (fr.short_term_tickers or risk < res.min_req_months):
+            shown = sorted(fr.short_term_tickers, key=lambda t: months.get(t, 0)) or missing[:1]
+            level, key = "warning", "data_note_short"
+        else:
+            continue
+        if not shown:
+            continue
+        names = dict(zip(fr.confirmed_df["symbol"], fr.confirmed_df.get("name", fr.confirmed_df["symbol"])))
+        tickers = _T("data_note_sep").join(
+            _T("data_note_ticker").format(
+                sym=t, name=(jp and jp_name_for(t)) or names.get(t) or "", n=months.get(t, 0))
+            for t in shown)
+        notes.append((fr.fund_name, level,
+                      _T(key).format(fund=fr.fund_name, tickers=tickers, period=period, risk=risk)))
+    return notes
+
+
 def _results():
     res = st.session_state.analysis_result
     if res is None: return
@@ -789,6 +821,13 @@ def _results():
             L["col_ir"]:         _num,
         },
     )
+    notes = _data_period_notes(res)
+    if notes:
+        with st.expander(_T("data_note_title").format(
+                funds=_T("data_note_sep").join(n[0] for n in notes)), expanded=False):
+            for i, (_, _, body) in enumerate(notes):
+                if i: st.divider()
+                st.markdown(body)
     xlsx_b = build_analysis_xlsx(res, L)
     res_b  = build_resolved_xlsx(res)
     st.download_button(_T("download_xlsx"), xlsx_b, "analysis_results.xlsx",

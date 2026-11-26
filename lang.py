@@ -80,6 +80,27 @@ _L: dict[str, dict[str, str]] = {
             "※上部の「期待年率リターン／シャープレシオ」は最適化の理論推定値です。"
             "この表の値は実際の月次リターン系列から計算した実績値のため、数値が異なります。"
         ),
+        "data_note_title":   "データ期間についての注意（{funds}）",
+        "data_note_sep":     "・",
+        "data_note_ticker":  "「{sym} {name}」は{n}か月分",
+        "data_note_short": (
+            "**{fund}：分析期間の一部しか使えていません**\n\n"
+            "{tickers}しかデータがありません（分析期間は{period}か月）。\n\n"
+            "そのため、このファンドの投資比率を決める計算では、"
+            "**リスク（値動きの大きさ）を全銘柄とも、データがそろう{risk}か月だけで計算**しています。\n"
+            "- この{risk}か月に大きな下落がなければ、リスクが低く、シャープレシオが高く出やすくなります。\n"
+            "- リターンは最長{period}か月分で計算しているため、分析期間全体（{period}か月）の分析とは言い切れない結果です。\n\n"
+            "このままの結果を使っても構いませんが、より正確に比べたい場合は、"
+            "分析期間を{risk}か月にそろえるか、この銘柄を外して比べることをおすすめします。"
+        ),
+        "data_note_zero": (
+            "**{fund}：データの短い銘柄があります**\n\n"
+            "{tickers}しかデータがありません（分析期間は{period}か月）。\n\n"
+            "全銘柄がそろう月が少ないため、データのない期間（上場前など）を「リターン0%」とみなして計算しました。"
+            "この銘柄はリスクが実際より低く見え、比率が大きめに出やすくなります。\n\n"
+            "このままの結果を使っても構いませんが、より正確に比べたい場合は、"
+            "分析期間を短くするか、この銘柄を外して比べることをおすすめします。"
+        ),
         "section_comparison_funds": "比較ファンド（任意）",
         "comp_fund_hint": "比較対象のファンドの銘柄を入力してください。メインと同じ最適化処理を行い、1つのファンドとして全比較チャートに表示されます。",
         "comp_fund_name_label": "比較ファンド名",
@@ -245,6 +266,28 @@ _L: dict[str, dict[str, str]] = {
             "A higher Info Ratio means more consistent outperformance. "
             "* The Expected Return / Sharpe Ratio shown above are optimizer estimates (theoretical). "
             "Values in this table are realized figures computed from actual monthly returns."
+        ),
+        "data_note_title":   "Note on data length ({funds})",
+        "data_note_sep":     ", ",
+        "data_note_ticker":  "\"{sym} {name}\" has {n} months",
+        "data_note_short": (
+            "**{fund}: only part of the analysis period is used**\n\n"
+            "{tickers} of data (analysis period: {period} months).\n\n"
+            "When computing this fund's weights, **risk (volatility and correlations) for every asset "
+            "is estimated only from the {risk} months in which all assets have data**.\n"
+            "- If those {risk} months had no major decline, risk tends to look lower and the Sharpe ratio higher.\n"
+            "- Returns use up to {period} months, so the result does not fully reflect the whole {period}-month period.\n\n"
+            "You can use the result as it is, but for a more accurate comparison we recommend "
+            "aligning the analysis period to {risk} months or comparing without this asset."
+        ),
+        "data_note_zero": (
+            "**{fund}: some assets have short data**\n\n"
+            "{tickers} of data (analysis period: {period} months).\n\n"
+            "Few months have data for all assets, so months without data (e.g. before listing) "
+            "were treated as 0% returns. Such assets look less risky than they are and tend to get "
+            "a larger weight.\n\n"
+            "You can use the result as it is, but for a more accurate comparison we recommend "
+            "shortening the analysis period or comparing without these assets."
         ),
         "section_comparison_funds": "Comparison Fund (Optional)",
         "comp_fund_hint": "Enter symbols for a comparison fund. It will be optimized with the same process as your main portfolio and shown as a single fund in all charts.",
