@@ -727,8 +727,9 @@ def _analyse():
             "cumulative_return_summary.png":    cm.mpl_cum_bar(res, L, custom=cc),
             "cumulative_return_timeseries.png": cm.mpl_cum_line(res, L, custom=cc),
         }
-        # Per-fund efficient frontier charts
-        for fi, fr in enumerate(res.funds):
+        # Per-fund efficient frontier charts (not made with a min-weight constraint:
+        # the curve is unconstrained, so it would not match the ★)
+        for fi, fr in enumerate(res.funds if res.min_weight <= 0 else []):
             suffix = f"_{fr.fund_name}" if len(res.funds) > 1 else ""
             chart_bytes[f"efficient_frontier{suffix}.png"] = \
                 cm.mpl_efficient_frontier(res, L, fund_idx=fi)
@@ -802,12 +803,17 @@ def _results():
     _dl("cumulative_return_summary.png")
 
     # ── Efficient frontier (per-fund) ─────────────────────────────────────
-    st.divider(); _sec("section_frontier", "desc_frontier")
-    if len(res.funds) == 1:
+    st.divider()
+    if res.min_weight > 0:
+        st.subheader(_T("section_frontier"))
+        st.markdown(_T("msg_frontier_hidden").format(pct=f"{res.min_weight * 100:g}"))
+    elif len(res.funds) == 1:
+        _sec("section_frontier", "desc_frontier")
         try: st.altair_chart(ca.chart_efficient_frontier(res, L, fund_idx=0), use_container_width=True)
         except Exception as e: st.warning(str(e))
         _dl("efficient_frontier.png")
     else:
+        _sec("section_frontier", "desc_frontier")
         ef_tabs = st.tabs([fr.fund_name for fr in res.funds])
         for fi, tab in enumerate(ef_tabs):
             with tab:

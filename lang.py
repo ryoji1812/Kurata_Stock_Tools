@@ -28,7 +28,7 @@ _L: dict[str, dict[str, str]] = {
         "desc_risk_free_rate":  "シャープレシオ計算に使う金利（% で入力）",
         "label_min_weight":     "最小投資比率",
         "desc_min_weight":      "各銘柄への最小割り当て比率（% で入力、0 = 制約なし）",
-        "warn_min_weight":      "最小投資比率を 0% 以外に設定すると効率的フロンティアの信頼性が低下します",
+        "warn_min_weight":      "最小投資比率を 0% 以外に設定すると、効率的フロンティアの図は表示されません",
         "label_user_country":   "対象国",
         "desc_user_country":    "銘柄検索の優先国とベンチマーク指数の選択に使用",
         "label_mdd_threshold":  "最大ドローダウン閾値",
@@ -120,6 +120,11 @@ _L: dict[str, dict[str, str]] = {
             "横軸がリスク（値動きの大きさ）、縦軸がリターン（利益率）です。"
             "★が今回の最適ポートフォリオ、赤い点は大きな下落を経験した銘柄です。"
         ),
+        "msg_frontier_hidden": (
+            "最小投資比率（{pct}%）を設定しているため、効率的フロンティアの図は表示していません。"
+            "最小投資比率の制約があると、最適ポートフォリオ（★）が効率的フロンティアの曲線上に乗らず、"
+            "図が正しい形になりません。図が必要な場合は、最小投資比率を 0% にして分析してください。"
+        ),
         "section_cum_line": "累積リターン推移",
         "desc_cum_line":    "投資開始時を0%として時系列のリターン推移を表します。",
         # ── DataFrame columns ──────────────────────────────────────────────
@@ -197,7 +202,7 @@ _L: dict[str, dict[str, str]] = {
         "label_risk_free_rate": "Risk-Free Rate",
         "desc_risk_free_rate":  "Rate used for Sharpe ratio calculation (enter as %)",
         "desc_min_weight":      "Minimum allocation per asset (enter as %, 0 = no constraint)",
-        "warn_min_weight":      "Setting min weight above 0% reduces the reliability of the Efficient Frontier",
+        "warn_min_weight":      "With a min weight above 0%, the Efficient Frontier chart is not shown",
         "label_user_country":   "Country",
         "desc_user_country":    "Used to prioritize stock search and select benchmark indices",
         "label_mdd_threshold":  "MDD Threshold",
@@ -285,6 +290,11 @@ _L: dict[str, dict[str, str]] = {
         "desc_frontier": (
             "X-axis = risk (volatility), Y-axis = expected return. "
             "★ = optimal portfolio. Red dots = assets that experienced large drawdowns."
+        ),
+        "msg_frontier_hidden": (
+            "The Efficient Frontier chart is not shown because a minimum weight ({pct}%) is set. "
+            "With that constraint the optimal portfolio (★) does not lie on the frontier curve, "
+            "so the chart would be misleading. Set the minimum weight to 0% to see it."
         ),
         "section_cum_line": "Cumulative Return Over Time",
         "desc_cum_line":    "Return evolution from 0% at start date.",
