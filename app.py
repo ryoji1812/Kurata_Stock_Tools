@@ -103,7 +103,7 @@ def _ensure_fund_ids(funds: list[dict]) -> None:
 
 def _init():
     today = date.today()
-    _sd_default = today - timedelta(days=3 * 365)
+    _sd_default = today - timedelta(days=5 * 365)
     for k, v in dict(
         lang="JP", portfolio_name="MyPortfolio",
         start_date=_sd_default, end_date=today,
