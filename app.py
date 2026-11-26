@@ -825,9 +825,9 @@ def _results():
     if notes:
         with st.expander(_T("data_note_title").format(
                 funds=_T("data_note_sep").join(n[0] for n in notes)), expanded=False):
-            for _, level, body in notes:
-                if level == "error": st.error(body, icon="❗")
-                else:                st.warning(body, icon="⚠️")
+            for i, (_, _, body) in enumerate(notes):
+                if i: st.divider()
+                st.markdown(body)
     xlsx_b = build_analysis_xlsx(res, L)
     res_b  = build_resolved_xlsx(res)
     st.download_button(_T("download_xlsx"), xlsx_b, "analysis_results.xlsx",
