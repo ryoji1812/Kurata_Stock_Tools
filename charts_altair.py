@@ -129,6 +129,7 @@ def chart_cum_bar(result: AnalysisResult, L: dict, custom_colors: dict | None = 
         df[L["col_cum_return"]]
         .astype(str).str.replace("%", "", regex=False)
         .astype(float)
+        * 100   # stored as a fraction (1.12 = 112%)
     )
     df = df.sort_values(L["col_cum_return"], ascending=False).reset_index(drop=True)
 

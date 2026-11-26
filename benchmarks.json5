@@ -46,7 +46,8 @@
       },
       {
         "name": "TOPIX",
-        "symbol": "1306.T",
+        // 1306.T was replaced: Yahoo's data around its 2026-03 split is broken
+        "symbol": "1348.T",
         "priority": 2,
         "type": "etf",
         "note": "Market-cap weighted"
