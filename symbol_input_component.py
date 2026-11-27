@@ -53,10 +53,13 @@ def _get_component():
     return _COMP
 
 
-def render_symbol_table(rows, lang, country, labels, search_results=None, key="sym"):
+def render_symbol_table(rows, lang, country, labels, search_results=None, key="sym",
+                        weight_mode=False):
+    """weight_mode: show the per-row weight (%) column for user-specified weights."""
     return _get_component()(
         rows=rows, lang=lang, country=country,
         labels=labels, search_results=search_results, key=key,
+        weight_mode=weight_mode,
     )
 
 
@@ -336,7 +339,21 @@ body{
   /* wrap long names to two lines rather than cutting them short */
   .td-text{white-space:normal;display:-webkit-box;-webkit-line-clamp:2;
            -webkit-box-orient:vertical;line-height:1.3}
+  /* weight mode: the weight column takes the status column's place */
+  .tbl.wm{--cols:minmax(72px,88px) minmax(0,1fr) 64px 44px !important}
+  .wm .c-st{display:none}
 }
+
+/* ── Weight column (user-specified weights) ─────── */
+.w-inp{width:100%;padding:5px 6px;text-align:right;
+  border:1.5px solid var(--bdr);border-radius:5px;outline:none;
+  font-size:13px;background:var(--bg);color:var(--fg)}
+.w-inp:focus{border-color:var(--pri)}
+.w-foot{display:flex;flex-wrap:wrap;align-items:center;justify-content:flex-end;
+  gap:6px 12px;padding:6px 2px 0;font-size:13px;color:var(--fg)}
+.w-eq{background:var(--bg);border:1px solid var(--bdr);border-radius:6px;
+  padding:4px 10px;font-size:12.5px;color:var(--fg);cursor:pointer}
+.w-eq:hover{border-color:var(--pri);color:var(--pri)}
 
 /* ── Symbol chip ────────────────────────────────── */
 .chip{display:inline-flex;align-items:center;justify-content:center;
@@ -487,6 +504,7 @@ try{
 }catch(e){}
 /* ── State ────────────────────────────────────────── */
 let rows=[], labels={}, seq=0, lastSrSeq=-1, initialized=false, _rid=0;
+let weightMode=false;
 const _sugData={}; /* rowId -> sug array; avoids JSON-in-HTML attribute issues */
 let _sugHovered=false;
 let _deferredRender=false;
@@ -506,12 +524,13 @@ function safeRender(){
 const T = k => labels[k]||k;
 /* minmax(0,1fr): let a long company name shrink (ellipsis) instead of widening the table */
 const COLS = 'minmax(80px,120px) minmax(0,1fr) minmax(68px,100px) 46px 76px 72px';
+const COLS_W = 'minmax(80px,120px) minmax(0,1fr) minmax(68px,100px) 46px 76px 84px 72px';
 
 /* ── Row factory ──────────────────────────────────── */
 function nr(inp=''){return{id:_rid++,inp,confirmed:false,
   symbol:'',name:'',exchange:'',country:'',
   notFound:false,duplicate:false,searching:false,prev:null,sug:[],hi:-1,
-  name_ja:'',src:'',pick:false,composing:false};}
+  name_ja:'',src:'',pick:false,composing:false,weight:''};}
 /* display name: Japanese company name for JP stocks, else the Yahoo name.
    (row.name stays the Yahoo name — it is what charts / Excel use) */
 const dispName=r=>r.name_ja||r.name||'';
@@ -600,6 +619,8 @@ function pickSug(rowId,si){
   if(row&&s) confirmRow(row,s);
 }
 function confirmRow(row,s){
+  /* the weight belongs to the stock: keep it only when the same stock is re-confirmed */
+  if(!(row.prev&&row.prev.symbol===s.symbol)) row.weight='';
   Object.assign(row,{confirmed:true,symbol:s.symbol,name:s.name||'',name_ja:s.name_ja||'',
     exchange:s.exchange||'',country:s.country||'',
     inp:s.symbol,notFound:false,duplicate:false,searching:false,
@@ -627,7 +648,43 @@ function notifyRows(){
     name:r.name,name_ja:r.name_ja||'',exchange:r.exchange,
     country:r.country,confirmed:r.confirmed,
     notFound:r.notFound,duplicate:r.duplicate,src:r.src||'',
+    weight:r.weight||'',
   }))});
+}
+
+/* ── Weights (weight mode) ───────────────────────────── */
+/* '' = not entered. Full-width digits / "%" are tolerated. */
+const wNum=v=>{const s=String(v||'').normalize('NFKC').replace(/[%\s]/g,'');
+  return s===''?null:(/^\d*\.?\d+$|^\d+\.$/.test(s)?parseFloat(s):NaN);};
+function wSumText(){
+  const ws=rows.filter(r=>r.confirmed).map(r=>wNum(r.weight));
+  const sum=ws.filter(w=>w!==null&&!isNaN(w)).reduce((a,b)=>a+b,0);
+  return T('weight_total').replace('{sum}',String(Math.round(sum*100)/100));
+}
+function _updWSum(){const el=document.getElementById('wsum'); if(el) el.textContent=wSumText();}
+function onW(row,val){
+  row.weight=val; _updWSum();
+  deb('w',notifyRows,600);   /* send while typing, but not on every key */
+}
+function onWc(row,val){
+  const n=wNum(val);
+  row.weight=(n!==null&&!isNaN(n))?String(n):val;
+  clearTimeout(tmr['w']); render(); notifyRows();
+}
+/* Fill only the empty weights, splitting what is left of 100% equally */
+function equalize(){
+  const conf=rows.filter(r=>r.confirmed);
+  const blank=conf.filter(r=>wNum(r.weight)===null);
+  if(!blank.length) return;
+  const used=conf.map(r=>wNum(r.weight)).filter(w=>w!==null&&!isNaN(w)).reduce((a,b)=>a+b,0);
+  const rest=Math.round((100-used)*100);   /* in 0.01% units */
+  if(rest<0) return;
+  const each=Math.floor(rest/blank.length);
+  blank.forEach((r,i)=>{
+    const u=each+(i<rest-each*blank.length?1:0);   /* spread the rounding remainder */
+    r.weight=String(u/100);
+  });
+  render(); notifyRows();
 }
 
 /* ── Return key: confirm highlighted or fire search ─ */
@@ -767,10 +824,19 @@ function render(){
   const fse = fid ? (ae.selectionEnd   || fv.length) : 0;
 
   const hasSug=rows.some(r=>r.sug&&r.sug.length>0);
-  let h=`<div class="tbl" style="--cols:${COLS}">
+  const wm=weightMode;
+  const wCell=row=>!wm?'':(row.confirmed
+    ? `<div class="td"><input id="w${row.id}" class="w-inp" type="text" inputmode="decimal"
+        value="${ea(row.weight)}" placeholder="—"
+        oninput="onW(rows.find(r=>r.id===${row.id}),this.value)"
+        onchange="onWc(rows.find(r=>r.id===${row.id}),this.value)"
+        onkeydown="if(event.key==='Enter'){event.preventDefault();this.blur();}"
+        autocomplete="off"></div>`
+    : `<div class="td"></div>`);
+  const heads=['col_symbol','col_name','col_exchange','col_country','col_status'].concat(wm?['col_weight_short','']:['']);
+  let h=`<div class="tbl${wm?' wm':''}" style="--cols:${wm?COLS_W:COLS}">
   <div class="thead">
-    ${['col_symbol','col_name','col_exchange','col_country','col_status','']
-      .map((k,j)=>`<div class="th${j===2?' c-ex':j===3?' c-co':''}">${esc(k?T(k):'')}</div>`).join('')}
+    ${heads.map((k,j)=>`<div class="th${j===2?' c-ex':j===3?' c-co':j===4?' c-st':''}">${esc(k?T(k):'')}</div>`).join('')}
   </div>`;
 
   rows.forEach((row,i)=>{
@@ -784,7 +850,8 @@ function render(){
       <div class="td"><span class="td-text">${esc(dispName(row))}</span></div>
       <div class="td c-ex"><span class="td-meta">${esc(row.exchange)}</span></div>
       <div class="td c-co"><span class="td-meta">${esc(row.country)}</span></div>
-      <div class="td"><span class="b-ok">✓ ${esc(T('status_confirmed_short'))}</span></div>
+      <div class="td c-st"><span class="b-ok">✓ ${esc(T('status_confirmed_short'))}</span></div>
+      ${wCell(row)}
       <div class="td" style="gap:4px">
         <button class="btn-del" onclick="delRow(${row.id})">✕</button>
       </div>`;
@@ -823,7 +890,8 @@ function render(){
       <div class="td"></div>
       <div class="td c-ex"></div>
       <div class="td c-co"></div>
-      <div class="td"></div>
+      <div class="td c-st"></div>
+      ${wCell(row)}
       <div class="td" style="gap:4px">
         ${row.prev?`<button class="btn-cancel" onclick="cancelEdit(rows.find(r=>r.id===${row.id}))" title="${ea(T('hint_cancel_edit'))}">↩</button>`:''}
         <button class="btn-del" onclick="delRow(${row.id})">✕</button>
@@ -834,6 +902,8 @@ function render(){
 
   h+=`</div>
   <button class="add-btn" onclick="addRow()" title="${ea(T('btn_add_symbol'))}">＋</button>`;
+  if(wm) h+=`<div class="w-foot"><span id="wsum">${esc(wSumText())}</span>
+    <button class="w-eq" onclick="equalize()">${esc(T('btn_equalize'))}</button></div>`;
   document.getElementById('root').innerHTML=h;
   /* keep the open dropdown of the focused input (a rebuild must not hide it) */
   const fr=fid&&rows.find(r=>'i'+r.id===fid&&!r.confirmed&&(r.sug||[]).length);
@@ -856,6 +926,7 @@ function render(){
 /* ── Receive props ────────────────────────────────── */
 function onRender(a, theme){
   labels=a.labels||labels;
+  weightMode=!!a.weight_mode;
 
   /* theme comes from ev.data.theme (not ev.data.args) */
   if(theme) _theme = theme;
@@ -868,7 +939,7 @@ function onRender(a, theme){
           id:r.id!==undefined?r.id:_rid-1,
           confirmed:!!r.confirmed, symbol:r.symbol||'',
           name:r.name||'',exchange:r.exchange||'',country:r.country||'',
-          name_ja:r.name_ja||'',src:r.src||'',
+          name_ja:r.name_ja||'',src:r.src||'',weight:r.weight||'',
         }))
       : [nr()];
     _rid=Math.max(_rid,...rows.map(r=>r.id+1));

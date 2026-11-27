@@ -43,7 +43,14 @@ class FundResult:
     period_months:      int = 0                # months in the analysis period
     risk_months:        int = 0                # months used for the covariance
     risk_zero_filled:   bool = False           # missing months were filled with 0%
+    risk_start:         str = ""               # first month all assets have prices (YYYY-MM-DD)
     data_months:        dict[str, int] = field(default_factory=dict)
+    # User-specified weights: no optimization. opt_* is the max-Sharpe portfolio
+    # of the same assets (the ★ on the frontier); the fund itself is drawn as ◆.
+    fixed_weights:      bool = False
+    opt_return:         float | None = None
+    opt_volatility:     float | None = None
+    opt_sharpe:         float | None = None
 
 
 @dataclass
@@ -355,20 +362,27 @@ def run_analysis(
 
         _progress(L.get("step_optimize", "Optimizing portfolio...")
                   + (f" ({fund_name})" if len(fund_inputs) > 1 else ""))
-        mu = expected_returns.mean_historical_return(
-            prices[f_tickers], frequency=12, compounding=False
-        )
+        # Expected returns and covariance come from the same sample: the months in
+        # which every asset has data (standard MPT practice — mixing windows makes
+        # the inputs inconsistent).
         _ret_cov = fund_returns.dropna()
         risk_zero_filled = False
         if len(_ret_cov) < max(12, len(f_tickers) + 1):
             risk_zero_filled = bool(fund_returns.isna().any().any())
             _ret_cov = fund_returns.fillna(0)
+        mu = expected_returns.mean_historical_return(
+            _ret_cov, returns_data=True, frequency=12, compounding=False
+        )
         S = risk_models.CovarianceShrinkage(
             _ret_cov, returns_data=True, frequency=12
         ).ledoit_wolf()
+        # First month with a price for every asset (= the start date that aligns the period)
+        risk_start = (_ret_cov.index.min() - pd.DateOffset(months=1)
+                      if not risk_zero_filled and len(_ret_cov) else None)
 
         n_assets = len(f_tickers)
-        eff_min_w = min(min_weight, 1.0 / n_assets) if n_assets > 0 else min_weight
+        fixed = fi.get("weights")   # user-specified weights → min weight does not apply
+        eff_min_w = 0.0 if fixed else (min(min_weight, 1.0 / n_assets) if n_assets > 0 else min_weight)
         opt_rfr = risk_free_rate if float(mu.max()) > risk_free_rate else 0.0
 
         def _build_ef(_mu=mu, _S=S, _emw=eff_min_w) -> EfficientFrontier:
@@ -385,8 +399,20 @@ def run_analysis(
             ef.min_volatility()
 
         weights      = ef.clean_weights()
-        w_series     = pd.Series(weights)
         exp_ret, vol, sharpe_val = ef.portfolio_performance(risk_free_rate=risk_free_rate)
+        opt_perf     = None
+        if fixed:
+            # Keep the optimum only as the ★ reference; the fund uses the given weights
+            # (renormalized in case an asset had no price data).
+            opt_perf = (exp_ret, vol, sharpe_val)
+            raw      = {t: float(fixed.get(t, 0.0)) for t in f_tickers}
+            total    = sum(raw.values())
+            weights  = {t: (w / total if total > 0 else 0.0) for t, w in raw.items()}
+            w_vec    = pd.Series(weights)[mu.index]
+            exp_ret  = float(w_vec @ mu)
+            vol      = float(np.sqrt(w_vec @ S.loc[mu.index, mu.index] @ w_vec))
+            sharpe_val = (exp_ret - risk_free_rate) / vol if vol > 0 else float("nan")
+        w_series     = pd.Series(weights)
         pf_returns   = _calc_portfolio_returns(fund_returns, w_series)
 
         # Weights display table
@@ -416,7 +442,12 @@ def run_analysis(
             period_months      = int(prices[f_tickers].notna().any(axis=1).sum()),
             risk_months        = len(_ret_cov) + 1,
             risk_zero_filled   = risk_zero_filled,
+            risk_start         = risk_start.strftime("%Y-%m-%d") if risk_start is not None else "",
             data_months        = {t: int(month_counts[t]) for t in f_tickers},
+            fixed_weights      = bool(fixed),
+            opt_return         = float(opt_perf[0]) if opt_perf else None,
+            opt_volatility     = float(opt_perf[1]) if opt_perf else None,
+            opt_sharpe         = float(opt_perf[2]) if opt_perf else None,
         ))
 
     # ── Step 8: Risk metrics + comparison table ───────────────────────────

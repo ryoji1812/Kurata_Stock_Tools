@@ -49,7 +49,8 @@ def build_analysis_xlsx(result: AnalysisResult, L: dict) -> bytes:
 
         ws_res.append([L["excel_title"],      ""])
         ws_res.append([L["excel_calc_date"],  result.timestamp])
-        ws_res.append([L["excel_opt_type"],   L["excel_opt_tangent"]])
+        ws_res.append([L["excel_opt_type"],   L["excel_opt_fixed" if getattr(fr, "fixed_weights", False)
+                                                else "excel_opt_tangent"]])
         ws_res.append([L["excel_exp_return"], f"{fr.expected_return*100:.2f} %"])
         ws_res.append([L["excel_ann_risk"],   f"{fr.volatility*100:.2f} %"])
         ws_res.append([L["excel_sharpe"],     f"{fr.sharpe:.4f}"])

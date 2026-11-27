@@ -90,7 +90,38 @@ def _new_fund(idx: int = 1) -> dict:
 
 def _fund_widget_keys(fid: str) -> list[str]:
     """Session-state keys of the widgets that belong to one fund."""
-    return [f"fund_name_{fid}", f"_cp_fund_{fid}", f"_sel_fund_style_{fid}", f"sym_fund_{fid}"]
+    return [f"fund_name_{fid}", f"_cp_fund_{fid}", f"_sel_fund_style_{fid}", f"sym_fund_{fid}",
+            f"weight_fixed_{fid}"]
+
+
+def _parse_weight(v) -> float | None:
+    """'' → None (not entered); unparsable / negative → nan."""
+    import unicodedata
+    s = unicodedata.normalize("NFKC", str(v or "")).replace("%", "").strip()
+    if not s:
+        return None
+    try:
+        w = float(s)
+    except ValueError:
+        return float("nan")
+    return w if w >= 0 else float("nan")
+
+
+def _weight_issue(fund: dict) -> str | None:
+    """Why a 'fixed weights' fund cannot be analysed yet (None if it can)."""
+    conf = [r for r in fund.get("ticker_rows", []) if r.get("confirmed")]
+    if not conf:
+        return None   # already reported as "no confirmed symbols"
+    ws = [_parse_weight(r.get("weight")) for r in conf]
+    name = fund["name"] or _T("fund_default_name")
+    if any(w is None for w in ws):
+        return _T("warn_weight_blank").format(name=name)
+    if any(w != w for w in ws):   # nan
+        return _T("warn_weight_invalid").format(name=name)
+    total = sum(ws)
+    if abs(total - 100) > 0.01:
+        return _T("warn_weight_sum").format(name=name, sum=f"{round(total, 2):g}")
+    return None
 
 
 def _ensure_fund_ids(funds: list[dict]) -> None:
@@ -448,6 +479,17 @@ def _fund_tabs():
         }
         .kst-x:hover { opacity: 1; background: rgba(128, 128, 128, 0.22); }
 
+        /* "比率を指定" checkbox: centered in its column next to the fund name */
+        [data-testid="stColumn"]:has([class*="st-key-weight_fixed_"]) [data-testid="stVerticalBlock"] {
+            align-items: center;
+        }
+        /* phones: columns stack, so keep it left-aligned like everything else */
+        @media (max-width: 640px) {
+            [data-testid="stColumn"]:has([class*="st-key-weight_fixed_"]) [data-testid="stVerticalBlock"] {
+                align-items: flex-start;
+            }
+        }
+
         /* Eliminate the flex gap contribution of style-only markdown blocks.
            Note: ":only-child" can't be used because indentation whitespace in
            the Python string creates text nodes around the <style> tag — the
@@ -506,14 +548,24 @@ def _fund_tabs():
             # Sync to fund dict only via the key read, never triggering a
             # label-changing rerun.
             _fname_key = f"fund_name_{fid}"
-            st.text_input(
-                _T("fund_name_label"),
-                value=fund["name"],
-                placeholder=_T("fund_name_placeholder"),
-                key=_fname_key,
-            )
+            nc1, nc2 = st.columns([85, 15], vertical_alignment="bottom")
+            with nc1:
+                st.text_input(
+                    _T("fund_name_label"),
+                    value=fund["name"],
+                    placeholder=_T("fund_name_placeholder"),
+                    key=_fname_key,
+                )
             # Always keep fund dict in sync (labels don't use this value)
             fund["name"] = st.session_state.get(_fname_key, fund["name"])
+
+            # How the weights are decided (per fund): checked = specified, else optimized
+            w_key = f"weight_fixed_{fid}"
+            if w_key not in st.session_state:
+                st.session_state[w_key] = fund.get("weight_mode") == "fixed"
+            with nc2:
+                st.checkbox(_T("weight_mode_fixed"), key=w_key, help=_T("help_weight_fixed"))
+            fund["weight_mode"] = "fixed" if st.session_state[w_key] else "optimize"
 
             # Chart style (color + line style) in expander
             c_key = f"_cp_fund_{fid}"
@@ -545,6 +597,7 @@ def _fund_tabs():
                 labels         = _labels(lang),
                 search_results = fund.get("_sym_search_results"),
                 key            = f"sym_fund_{fid}",
+                weight_mode    = fund["weight_mode"] == "fixed",
             )
 
             action = handle_fund(cv, fund)
@@ -664,8 +717,13 @@ def _run_button():
         st.warning(_T("warn_has_unconfirmed"))
     if bad_order:
         st.warning(_T("warn_date_order"))
+    weight_issues = [m for f in funds if f.get("weight_mode") == "fixed"
+                     for m in [_weight_issue(f)] if m]
+    for m in weight_issues:
+        st.warning(m)
 
-    blocked = not all_ok or has_bad_rows or bad_order or bool(bad_funds)
+    blocked = (not all_ok or has_bad_rows or bad_order or bool(bad_funds)
+               or bool(weight_issues))
     return st.button(_T("btn_run"), type="primary", disabled=blocked, key="run")
 
 
@@ -701,6 +759,9 @@ def _analyse():
         multi_funds.append({
             "name": fund["name"] or f"Fund {len(multi_funds)+1}",
             "confirmed_df": cdf,
+            # user-specified weights (fractions); None = optimize
+            "weights": ({r["symbol"]: _parse_weight(r.get("weight")) / 100 for r in confirmed}
+                        if fund.get("weight_mode") == "fixed" else None),
         })
 
     msgs = []; ph = st.empty()
@@ -728,9 +789,11 @@ def _analyse():
             "cumulative_return_summary.png":    cm.mpl_cum_bar(res, L, custom=cc),
             "cumulative_return_timeseries.png": cm.mpl_cum_line(res, L, custom=cc),
         }
-        # Per-fund efficient frontier charts (not made with a min-weight constraint:
-        # the curve is unconstrained, so it would not match the ★)
-        for fi, fr in enumerate(res.funds if res.min_weight <= 0 else []):
+        # Per-fund efficient frontier charts (not for optimized funds under a min-weight
+        # constraint: the curve is unconstrained, so it would not match the ★)
+        for fi, fr in enumerate(res.funds):
+            if not _frontier_shown(res, fr):
+                continue
             suffix = f"_{fr.fund_name}" if len(res.funds) > 1 else ""
             chart_bytes[f"efficient_frontier{suffix}.png"] = \
                 cm.mpl_efficient_frontier(res, L, fund_idx=fi)
@@ -747,6 +810,9 @@ def _dl(f):
     d = st.session_state.chart_bytes.get(f, b"")
     if d: st.download_button(_T("btn_download_png"), d, f, "image/png", key=f"dl_{f}")
 
+_NOTE_MIN_GAP = 3   # months: a shorter common window than this is just data noise
+
+
 def _data_period_notes(res):
     """[(fund_name, "warning"|"error", markdown)] for funds whose risk estimate
     could not use the whole analysis period."""
@@ -756,13 +822,16 @@ def _data_period_notes(res):
         months  = getattr(fr, "data_months", None) or {}
         period  = getattr(fr, "period_months", 0)
         risk    = getattr(fr, "risk_months", 0)
-        if not months or not period:
+        # the note is about how weights are computed; specified weights are not
+        if not months or not period or getattr(fr, "fixed_weights", False):
             continue
         missing = sorted((t for t, n in months.items() if n < period), key=lambda t: months[t])
         if getattr(fr, "risk_zero_filled", False):
             level, key, shown = "error", "data_note_zero", missing
-        elif risk < period and (fr.short_term_tickers or risk < res.min_req_months):
-            shown = sorted(fr.short_term_tickers, key=lambda t: months.get(t, 0)) or missing[:1]
+        elif period - risk >= _NOTE_MIN_GAP:
+            # the assets that really shorten the common window (shortest first);
+            # a month or two less is just where a listing falls in the first month
+            shown = [t for t in missing if months[t] <= period - _NOTE_MIN_GAP][:5]
             level, key = "warning", "data_note_short"
         else:
             continue
@@ -773,9 +842,16 @@ def _data_period_notes(res):
             _T("data_note_ticker").format(
                 sym=t, name=(jp and jp_name_for(t)) or names.get(t) or "", n=months.get(t, 0))
             for t in shown)
+        start = getattr(fr, "risk_start", "")
         notes.append((fr.fund_name, level,
-                      _T(key).format(fund=fr.fund_name, tickers=tickers, period=period, risk=risk)))
+                      _T(key).format(fund=fr.fund_name, tickers=tickers, period=period, risk=risk,
+                                     start=start.replace("-", "/"))))
     return notes
+
+
+def _frontier_shown(res, fr) -> bool:
+    """Min weight only constrains optimized funds; specified weights are drawn as is."""
+    return getattr(fr, "fixed_weights", False) or res.min_weight <= 0
 
 
 def _results():
@@ -785,7 +861,11 @@ def _results():
     st.divider()
 
     # ── Per-fund weights ─────────────────────────────────────────────────
-    _sec("section_weights", "desc_weights")
+    any_fixed = any(getattr(fr, "fixed_weights", False) for fr in res.funds)
+    if any_fixed:
+        _sec("section_weights_mixed", "desc_weights_mixed")
+    else:
+        _sec("section_weights", "desc_weights")
     if len(res.funds) == 1:
         # Single fund: same layout as before
         c1, c2 = st.columns([1.2, 1])
@@ -794,8 +874,10 @@ def _results():
             try: st.altair_chart(ca.chart_weights(res, L, fund_idx=0), use_container_width=True)
             except Exception as e: st.warning(str(e))
     else:
-        # Multiple funds: tabbed view
-        fund_tabs = st.tabs([fr.fund_name for fr in res.funds])
+        # Multiple funds: tabbed view ((最適化)/(指定) only when the modes differ in use)
+        fund_tabs = st.tabs([fr.fund_name + (_T("tag_fixed" if getattr(fr, "fixed_weights", False)
+                                                else "tag_optimize") if any_fixed else "")
+                             for fr in res.funds])
         for fi, tab in enumerate(fund_tabs):
             with tab:
                 c1, c2 = st.columns([1.2, 1])
@@ -822,6 +904,7 @@ def _results():
             L["col_ir"]:         _num,
         },
     )
+    st.caption(_T("note_performance"))
     notes = _data_period_notes(res)
     if notes:
         with st.expander(_T("data_note_title").format(
@@ -843,22 +926,29 @@ def _results():
 
     # ── Efficient frontier (per-fund) ─────────────────────────────────────
     st.divider()
-    if res.min_weight > 0:
+    hidden_msg = _T("msg_frontier_hidden").format(pct=f"{res.min_weight * 100:g}")
+
+    def _frontier(fi, png):
+        if not _frontier_shown(res, res.funds[fi]):
+            st.markdown(hidden_msg); return
+        try: st.altair_chart(ca.chart_efficient_frontier(res, L, fund_idx=fi), use_container_width=True)
+        except Exception as e: st.warning(str(e))
+        if getattr(res.funds[fi], "fixed_weights", False):
+            st.caption(_T("desc_frontier_fixed"))
+        _dl(png)
+
+    if not any(_frontier_shown(res, fr) for fr in res.funds):
         st.subheader(_T("section_frontier"))
-        st.markdown(_T("msg_frontier_hidden").format(pct=f"{res.min_weight * 100:g}"))
+        st.markdown(hidden_msg)
     elif len(res.funds) == 1:
         _sec("section_frontier", "desc_frontier")
-        try: st.altair_chart(ca.chart_efficient_frontier(res, L, fund_idx=0), use_container_width=True)
-        except Exception as e: st.warning(str(e))
-        _dl("efficient_frontier.png")
+        _frontier(0, "efficient_frontier.png")
     else:
         _sec("section_frontier", "desc_frontier")
         ef_tabs = st.tabs([fr.fund_name for fr in res.funds])
         for fi, tab in enumerate(ef_tabs):
             with tab:
-                try: st.altair_chart(ca.chart_efficient_frontier(res, L, fund_idx=fi), use_container_width=True)
-                except Exception as e: st.warning(str(e))
-                _dl(f"efficient_frontier_{res.funds[fi].fund_name}.png")
+                _frontier(fi, f"efficient_frontier_{res.funds[fi].fund_name}.png")
 
     st.divider(); _sec("section_cum_line", "desc_cum_line")
     try: st.altair_chart(ca.chart_cum_line(res, L, custom_colors=cc), use_container_width=True)

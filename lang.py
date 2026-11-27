@@ -13,7 +13,7 @@ _L: dict[str, dict[str, str]] = {
         ),
         "app_description": (
             "候補銘柄を入力すると、**シャープレシオ（リターン÷リスク）が最大**になる"
-            "配分比率を自動計算します。"
+            "配分比率を自動計算します。投資比率を指定して分析することもできます。"
         ),
         # ── Basic settings ─────────────────────────────────────────────────
         "label_portfolio_name": "ポートフォリオ名",
@@ -27,7 +27,7 @@ _L: dict[str, dict[str, str]] = {
         "label_risk_free_rate": "無リスク金利",
         "desc_risk_free_rate":  "シャープレシオ計算に使う金利（% で入力）",
         "label_min_weight":     "最小投資比率",
-        "desc_min_weight":      "各銘柄への最小割り当て比率（% で入力、0 = 制約なし）",
+        "desc_min_weight":      "各銘柄への最小割り当て比率（% で入力、0 = 制約なし）。比率を指定したファンドには適用されません",
         "warn_min_weight":      "最小投資比率を 0% 以外に設定すると、効率的フロンティアの図は表示されません",
         "label_user_country":   "対象国",
         "desc_user_country":    "銘柄検索の優先国とベンチマーク指数の選択に使用",
@@ -47,6 +47,11 @@ _L: dict[str, dict[str, str]] = {
         "col_exchange":       "取引所",
         "col_country":        "国",
         "col_status":         "状態",
+        "col_weight_short":   "比率(%)",
+        "btn_equalize":       "均等に配分",
+        "weight_total":       "合計 {sum}%",
+        "weight_mode_fixed":  "比率を指定",
+        "help_weight_fixed":  "通常はチェック不要です（シャープレシオが最大になる投資比率を自動で計算します）。銘柄ごとの投資比率を自分で決めたいときだけ、チェックを入れて入力してください。",
         "status_confirmed":   "✅ 確定",
         "status_not_found":   "⚠️ 見つかりません",
         "btn_add_symbol":     "＋ 銘柄を追加",
@@ -57,6 +62,9 @@ _L: dict[str, dict[str, str]] = {
         "warn_no_confirmed":     "⚠️ 銘柄が入力されていません。",
         "warn_no_start_date":    "⚠️ 分析開始日を選択してください。",
         "warn_date_order":       "⚠️ 分析開始日は終了日より前にしてください。",
+        "warn_weight_blank":     "⚠️ {name}：比率が未入力の銘柄があります。",
+        "warn_weight_invalid":   "⚠️ {name}：比率に数値でない値があります。",
+        "warn_weight_sum":       "⚠️ {name}：投資比率の合計が {sum}% です。100% にしてください。",
         # ── Progress ───────────────────────────────────────────────────────
         "step_download":  "株価データを取得中...",
         "step_shortterm": "短期銘柄を確認中...",
@@ -72,13 +80,27 @@ _L: dict[str, dict[str, str]] = {
             "シャープレシオが最大になるよう各銘柄への配分比率を最適化した結果です。"
             "比率が高い銘柄ほど、この期間でリスクあたりのリターンが高かったことを示します。"
         ),
+        "section_weights_mixed": "投資比率",
+        "desc_weights_mixed": (
+            "「最適化」のファンドはシャープレシオが最大になるよう配分した比率、"
+            "「比率を指定」のファンドは入力した比率です。"
+        ),
+        "tag_optimize":       "（最適化）",
+        "tag_fixed":          "（指定）",
+        "desc_frontier_fixed": "◆が指定した比率のポートフォリオ、黄色の■が同じ銘柄で最適化した場合のポートフォリオです。",
+        "chart_fixed_pf":     "指定比率のポートフォリオ",
         "section_performance": "パフォーマンス比較",
         "desc_performance": (
             "ポートフォリオと市場指数の成績を比較します。"
             "ベータが1未満なら市場全体より値動きが小さく、"
             "情報比率が高いほどベンチマーク超過リターンの安定性が高いことを示します。"
-            "※上部の「期待年率リターン／シャープレシオ」は最適化の理論推定値です。"
-            "この表の値は実際の月次リターン系列から計算した実績値のため、数値が異なります。"
+        ),
+        "note_performance": (
+            "※この表は、分析期間中にこの投資比率で実際に保有していた場合の成績（実績値）です。"
+            "レポートなどで成績を示すときは、この表の値を使ってください。"
+            "効率的フロンティアの図の位置やExcelの「期待年率リターン」などは、投資比率を決めるための計算用の値です。"
+            "安定した計算と正しい形の図にするため、リスクには値動きのぶれを抑える補正をかけており、"
+            "この表の値とは少し異なりますが、問題はありません。"
         ),
         "data_note_title":   "データ期間についての注意（{funds}）",
         "data_note_sep":     "・",
@@ -86,18 +108,17 @@ _L: dict[str, dict[str, str]] = {
         "data_note_short": (
             "**{fund}：分析期間の一部しか使えていません**\n\n"
             "{tickers}しかデータがありません（分析期間は{period}か月）。\n\n"
-            "そのため、このファンドの投資比率を決める計算では、"
-            "**リスク（値動きの大きさ）を全銘柄とも、データがそろう{risk}か月だけで計算**しています。\n"
-            "- この{risk}か月に大きな下落がなければ、リスクが低く、シャープレシオが高く出やすくなります。\n"
-            "- リターンは最長{period}か月分で計算しているため、分析期間全体（{period}か月）の分析とは言い切れない結果です。\n\n"
-            "このままの結果を使っても構いませんが、より正確に比べたい場合は、"
-            "分析期間を{risk}か月にそろえるか、この銘柄を外して比べることをおすすめします。"
+            "そのため、このファンドの投資比率を決める計算（効率的フロンティアの図を含む）では、"
+            "**リターンとリスクを全銘柄とも、データがそろう{risk}か月（{start}〜）だけで計算**しています。"
+            "パフォーマンス比較の表は分析期間全体（{period}か月）の実績なので、図と表の値は一致しません。\n\n"
+            "このままの結果を使っても構いませんが、期間をそろえたい場合は、"
+            "分析開始日を {start} にするか、この銘柄を外して比べることをおすすめします。"
         ),
         "data_note_zero": (
             "**{fund}：データの短い銘柄があります**\n\n"
             "{tickers}しかデータがありません（分析期間は{period}か月）。\n\n"
             "全銘柄がそろう月が少ないため、データのない期間（上場前など）を「リターン0%」とみなして計算しました。"
-            "この銘柄はリスクが実際より低く見え、比率が大きめに出やすくなります。\n\n"
+            "この銘柄はリスクやリターンが実際とずれて見えます。\n\n"
             "このままの結果を使っても構いませんが、より正確に比べたい場合は、"
             "分析期間を短くするか、この銘柄を外して比べることをおすすめします。"
         ),
@@ -139,11 +160,11 @@ _L: dict[str, dict[str, str]] = {
         "section_frontier": "効率的フロンティア",
         "desc_frontier": (
             "横軸がリスク（値動きの大きさ）、縦軸がリターン（利益率）です。"
-            "★が今回の最適ポートフォリオ、赤い点は大きな下落を経験した銘柄です。"
+            "黄色の■が今回の最適ポートフォリオ、赤い点は大きな下落を経験した銘柄です。"
         ),
         "msg_frontier_hidden": (
             "最小投資比率（{pct}%）を設定しているため、効率的フロンティアの図は表示していません。"
-            "最小投資比率の制約があると、最適ポートフォリオ（★）が効率的フロンティアの曲線上に乗らず、"
+            "最小投資比率の制約があると、最適ポートフォリオ（黄色の■）が効率的フロンティアの曲線上に乗らず、"
             "図が正しい形になりません。図が必要な場合は、最小投資比率を 0% にして分析してください。"
         ),
         "section_cum_line": "累積リターン推移",
@@ -172,6 +193,7 @@ _L: dict[str, dict[str, str]] = {
         "chart_optimal":        "最適ポートフォリオ",
         "chart_short_term":     "短期銘柄",
         "chart_high_mdd":       "高MDD銘柄",
+        "chart_short_high_mdd": "短期・高MDD銘柄",
         "chart_asset":          "銘柄",
         "chart_series":         "系列",
         # ── Chart titles (for mpl) ─────────────────────────────────────────
@@ -197,6 +219,7 @@ _L: dict[str, dict[str, str]] = {
         "excel_calc_date":   "最終計算日時",
         "excel_opt_type":    "最適化タイプ",
         "excel_opt_tangent": "接点",
+        "excel_opt_fixed":   "比率指定（最適化なし）",
         "excel_exp_return":  "期待年率リターン",
         "excel_ann_risk":    "年率リスク (標準偏差)",
         "excel_sharpe":      "シャープレシオ",
@@ -211,7 +234,8 @@ _L: dict[str, dict[str, str]] = {
         ),
         "app_description": (
             "Enter your candidate stocks and this tool automatically calculates the allocation "
-            "that **maximizes the Sharpe ratio** (return per unit of risk)."
+            "that **maximizes the Sharpe ratio** (return per unit of risk). "
+            "You can also analyze with weights you specify."
         ),
         "label_portfolio_name": "Portfolio Name",
         "label_period":         "Analysis Period",
@@ -223,7 +247,7 @@ _L: dict[str, dict[str, str]] = {
         "label_risk_free_rate": "Risk-Free Rate",
         "desc_risk_free_rate":  "Rate used for Sharpe ratio calculation (enter as %)",
         "label_min_weight":     "Minimum Weight",
-        "desc_min_weight":      "Minimum allocation per asset (enter as %, 0 = no constraint)",
+        "desc_min_weight":      "Minimum allocation per asset (enter as %, 0 = no constraint). Not applied to funds with specified weights",
         "warn_min_weight":      "With a min weight above 0%, the Efficient Frontier chart is not shown",
         "label_user_country":   "Country",
         "desc_user_country":    "Used to prioritize stock search and select benchmark indices",
@@ -242,6 +266,11 @@ _L: dict[str, dict[str, str]] = {
         "col_exchange":       "Exchange",
         "col_country":        "Country",
         "col_status":         "Status",
+        "col_weight_short":   "Weight(%)",
+        "btn_equalize":       "Split equally",
+        "weight_total":       "Total {sum}%",
+        "weight_mode_fixed":  "Specify weights",
+        "help_weight_fixed":  "Usually leave this unchecked (the weights that maximize the Sharpe ratio are calculated automatically). Check it only when you want to enter each asset's weight yourself.",
         "status_confirmed":   "✅ Confirmed",
         "status_not_found":   "⚠️ Not found",
         "btn_add_symbol":     "＋ Add Symbol",
@@ -252,6 +281,9 @@ _L: dict[str, dict[str, str]] = {
         "warn_no_confirmed":     "⚠️ No symbols entered.",
         "warn_no_start_date":    "⚠️ Please select a start date.",
         "warn_date_order":       "⚠️ Start date must be before the end date.",
+        "warn_weight_blank":     "⚠️ {name}: some weights are not entered.",
+        "warn_weight_invalid":   "⚠️ {name}: some weights are not numbers.",
+        "warn_weight_sum":       "⚠️ {name}: weights add up to {sum}%. Make them 100%.",
         "step_download":  "Downloading price data...",
         "step_shortterm": "Checking short-term assets...",
         "step_mdd":       "Computing max drawdown...",
@@ -265,13 +297,28 @@ _L: dict[str, dict[str, str]] = {
             "Weights optimized to maximize the Sharpe ratio. "
             "A higher weight means the asset delivered more return per unit of risk during this period."
         ),
+        "section_weights_mixed": "Portfolio Weights",
+        "desc_weights_mixed": (
+            "Optimized funds use the weights that maximize the Sharpe ratio; "
+            "funds with specified weights use the weights you entered."
+        ),
+        "tag_optimize":       " (optimized)",
+        "tag_fixed":          " (specified)",
+        "desc_frontier_fixed": "◆ = your specified weights; yellow ■ = the optimal portfolio of the same assets.",
+        "chart_fixed_pf":     "Specified Weights",
         "section_performance": "Performance Summary",
         "desc_performance": (
             "Compares your portfolio against market benchmarks. "
             "Beta below 1 means lower market sensitivity. "
-            "A higher Info Ratio means more consistent outperformance. "
-            "* The Expected Return / Sharpe Ratio shown above are optimizer estimates (theoretical). "
-            "Values in this table are realized figures computed from actual monthly returns."
+            "A higher Info Ratio means more consistent outperformance."
+        ),
+        "note_performance": (
+            "* This table shows how the portfolio actually performed over the analysis period with these weights. "
+            "Use these values when reporting performance. "
+            "The positions on the efficient frontier chart and the Excel \"Expected Annual Return\" etc. are "
+            "values calculated to decide the weights. To keep the calculation stable and the chart correctly shaped, "
+            "the risk is adjusted to dampen noise in price movements, so it differs slightly from this table — "
+            "this is expected."
         ),
         "data_note_title":   "Note on data length ({funds})",
         "data_note_sep":     ", ",
@@ -279,19 +326,18 @@ _L: dict[str, dict[str, str]] = {
         "data_note_short": (
             "**{fund}: only part of the analysis period is used**\n\n"
             "{tickers} of data (analysis period: {period} months).\n\n"
-            "When computing this fund's weights, **risk (volatility and correlations) for every asset "
-            "is estimated only from the {risk} months in which all assets have data**.\n"
-            "- If those {risk} months had no major decline, risk tends to look lower and the Sharpe ratio higher.\n"
-            "- Returns use up to {period} months, so the result does not fully reflect the whole {period}-month period.\n\n"
-            "You can use the result as it is, but for a more accurate comparison we recommend "
-            "aligning the analysis period to {risk} months or comparing without this asset."
+            "When computing this fund's weights (including the efficient frontier chart), "
+            "**returns and risk for every asset are estimated only from the {risk} months in which "
+            "all assets have data (from {start})**. The performance table covers the whole period "
+            "({period} months), so the chart and the table will not match.\n\n"
+            "You can use the result as it is, but to align the periods we recommend setting the "
+            "start date to {start} or comparing without this asset."
         ),
         "data_note_zero": (
             "**{fund}: some assets have short data**\n\n"
             "{tickers} of data (analysis period: {period} months).\n\n"
             "Few months have data for all assets, so months without data (e.g. before listing) "
-            "were treated as 0% returns. Such assets look less risky than they are and tend to get "
-            "a larger weight.\n\n"
+            "were treated as 0% returns, so the risk and return of such assets are distorted.\n\n"
             "You can use the result as it is, but for a more accurate comparison we recommend "
             "shortening the analysis period or comparing without these assets."
         ),
@@ -333,11 +379,11 @@ _L: dict[str, dict[str, str]] = {
         "section_frontier": "Efficient Frontier",
         "desc_frontier": (
             "X-axis = risk (volatility), Y-axis = expected return. "
-            "★ = optimal portfolio. Red dots = assets that experienced large drawdowns."
+            "Yellow ■ = optimal portfolio. Red dots = assets that experienced large drawdowns."
         ),
         "msg_frontier_hidden": (
             "The Efficient Frontier chart is not shown because a minimum weight ({pct}%) is set. "
-            "With that constraint the optimal portfolio (★) does not lie on the frontier curve, "
+            "With that constraint the optimal portfolio (yellow ■) does not lie on the frontier curve, "
             "so the chart would be misleading. Set the minimum weight to 0% to see it."
         ),
         "section_cum_line": "Cumulative Return Over Time",
@@ -364,6 +410,7 @@ _L: dict[str, dict[str, str]] = {
         "chart_optimal":        "Optimal Portfolio",
         "chart_short_term":     "Short-term Asset",
         "chart_high_mdd":       "High Drawdown Asset",
+        "chart_short_high_mdd": "Short-term & High Drawdown Asset",
         "chart_asset":          "Asset",
         "chart_series":         "Series",
         "cum_bar_title":  "Cumulative Return Comparison (Portfolio vs Benchmark)",
@@ -386,6 +433,7 @@ _L: dict[str, dict[str, str]] = {
         "excel_calc_date":   "Calculation Date",
         "excel_opt_type":    "Optimization Type",
         "excel_opt_tangent": "Tangent",
+        "excel_opt_fixed":   "Specified weights (no optimization)",
         "excel_exp_return":  "Expected Annual Return",
         "excel_ann_risk":    "Annual Risk (Std Dev)",
         "excel_sharpe":      "Sharpe Ratio",
