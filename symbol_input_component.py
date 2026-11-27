@@ -324,6 +324,20 @@ body{
 .td-meta{font-size:12px;color:var(--fg2);
          overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 
+/* ── Narrow screens (phones): drop exchange / country ── */
+@media (max-width:520px){
+  .tbl{--cols:minmax(72px,88px) minmax(0,1fr) 56px 56px !important}
+  .c-ex,.c-co{display:none}
+  .th{padding:7px 5px 5px}
+  .td{padding:5px 5px}
+  .chip{font-size:13px;padding:4px 6px;min-width:0}
+  .sym-inp{padding:6px 6px}
+  .sym-inp::placeholder{font-size:12px}
+  /* wrap long names to two lines rather than cutting them short */
+  .td-text{white-space:normal;display:-webkit-box;-webkit-line-clamp:2;
+           -webkit-box-orient:vertical;line-height:1.3}
+}
+
 /* ── Symbol chip ────────────────────────────────── */
 .chip{display:inline-flex;align-items:center;justify-content:center;
       border:1.5px solid var(--bdr);border-radius:5px;padding:4px 10px;
@@ -490,7 +504,8 @@ function safeRender(){
   render();
 }
 const T = k => labels[k]||k;
-const COLS = 'minmax(80px,120px) 1fr minmax(68px,100px) 46px 76px 72px';
+/* minmax(0,1fr): let a long company name shrink (ellipsis) instead of widening the table */
+const COLS = 'minmax(80px,120px) minmax(0,1fr) minmax(68px,100px) 46px 76px 72px';
 
 /* ── Row factory ──────────────────────────────────── */
 function nr(inp=''){return{id:_rid++,inp,confirmed:false,
@@ -755,7 +770,7 @@ function render(){
   let h=`<div class="tbl" style="--cols:${COLS}">
   <div class="thead">
     ${['col_symbol','col_name','col_exchange','col_country','col_status','']
-      .map(k=>`<div class="th">${esc(k?T(k):'')}</div>`).join('')}
+      .map((k,j)=>`<div class="th${j===2?' c-ex':j===3?' c-co':''}">${esc(k?T(k):'')}</div>`).join('')}
   </div>`;
 
   rows.forEach((row,i)=>{
@@ -767,8 +782,8 @@ function render(){
       h+=`
       <div class="td">${chip}</div>
       <div class="td"><span class="td-text">${esc(dispName(row))}</span></div>
-      <div class="td"><span class="td-meta">${esc(row.exchange)}</span></div>
-      <div class="td"><span class="td-meta">${esc(row.country)}</span></div>
+      <div class="td c-ex"><span class="td-meta">${esc(row.exchange)}</span></div>
+      <div class="td c-co"><span class="td-meta">${esc(row.country)}</span></div>
       <div class="td"><span class="b-ok">✓ ${esc(T('status_confirmed_short'))}</span></div>
       <div class="td" style="gap:4px">
         <button class="btn-del" onclick="delRow(${row.id})">✕</button>
@@ -806,7 +821,8 @@ function render(){
         </div>
       </div>
       <div class="td"></div>
-      <div class="td"></div>
+      <div class="td c-ex"></div>
+      <div class="td c-co"></div>
       <div class="td"></div>
       <div class="td" style="gap:4px">
         ${row.prev?`<button class="btn-cancel" onclick="cancelEdit(rows.find(r=>r.id===${row.id}))" title="${ea(T('hint_cancel_edit'))}">↩</button>`:''}
