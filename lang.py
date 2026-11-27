@@ -222,6 +222,7 @@ _L: dict[str, dict[str, str]] = {
         "section_advanced":    "⚙️ Advanced Settings",
         "label_risk_free_rate": "Risk-Free Rate",
         "desc_risk_free_rate":  "Rate used for Sharpe ratio calculation (enter as %)",
+        "label_min_weight":     "Minimum Weight",
         "desc_min_weight":      "Minimum allocation per asset (enter as %, 0 = no constraint)",
         "warn_min_weight":      "With a min weight above 0%, the Efficient Frontier chart is not shown",
         "label_user_country":   "Country",
