@@ -28,6 +28,8 @@ _BENCH_COLOR  = "#9CA3AF"
 _SHORT_COLOR  = "#F59E0B"
 _MDD_COLOR    = "#EF4444"
 _OPT_COLOR    = "#EAB308"
+_OPT_EDGE     = "#A16207"   # darker edge of the optimal square
+_FIXED_COLOR  = "#1F2937"   # charcoal — user-specified weights (◆, white edge)
 
 # Per-benchmark defaults (cycling)
 _BENCH_COLORS_M = ["#E67E22", "#16A085", "#8E44AD", "#E74C3C", "#2C3E50"]
@@ -120,6 +122,9 @@ def mpl_cum_bar(result: AnalysisResult, L: dict, custom: dict | None = None) -> 
 
 # ── 2. Efficient frontier ─────────────────────────────────────────────────────
 
+_MARKER_S = 36   # one marker size for every point and legend symbol (matplotlib's default dot size)
+
+
 def mpl_efficient_frontier(result: AnalysisResult, L: dict, fund_idx: int = 0) -> bytes:
     fr = result.funds[fund_idx] if fund_idx < len(result.funds) else None
     if fr is None:
@@ -130,8 +135,6 @@ def mpl_efficient_frontier(result: AnalysisResult, L: dict, fund_idx: int = 0) -
     mu  = fr.mu
     S   = fr.S
     rfr = result.risk_free_rate
-    sym_to_name = dict(zip(fr.confirmed_df["symbol"],
-                           fr.confirmed_df.get("name", fr.confirmed_df["symbol"])))
 
     fig, ax = plt.subplots(figsize=(10, 6))   # 縦横比 3:5
 
@@ -150,10 +153,15 @@ def mpl_efficient_frontier(result: AnalysisResult, L: dict, fund_idx: int = 0) -
     if vols:
         ax.plot(vols, rets, linestyle="--", color="gray", label=L["chart_frontier_curve"])
 
+    # Optimum: for a fund with user-specified weights, that of the same assets
+    fixed = getattr(fr, "fixed_weights", False)
+    o_vol, o_ret, o_sh = ((fr.opt_volatility, fr.opt_return, fr.opt_sharpe) if fixed
+                          else (fr.volatility, fr.expected_return, fr.sharpe))
+
     # CML
     if vols:
         cml_x = np.linspace(0, max(vols) * 1.1, 50)
-        cml_y = rfr * 100 + fr.sharpe * cml_x
+        cml_y = rfr * 100 + o_sh * cml_x
         ax.plot(cml_x, cml_y, label=L["chart_cml"], color=_PF_COLOR)
 
     # Long-term assets
@@ -161,31 +169,38 @@ def mpl_efficient_frontier(result: AnalysisResult, L: dict, fund_idx: int = 0) -
     if long_tickers:
         vv = [float(np.sqrt(S.loc[t, t])) * 100 for t in long_tickers]
         rr = [float(mu[t]) * 100 for t in long_tickers]
-        names = [f"{t}/{sym_to_name.get(t,t)}" for t in long_tickers]
-        ax.scatter(vv, rr, label=L["chart_asset"], zorder=5)
-        for i, name in enumerate(names):
-            ax.annotate(name, (vv[i], rr[i]), fontsize=7, alpha=0.75)
+        # no per-asset name labels: with many assets they clutter the PNG
+        ax.scatter(vv, rr, s=_MARKER_S, label=L["chart_asset"], zorder=5)
 
-    # Short-term
-    if fr.short_term_tickers:
-        vv = [float(np.sqrt(S.loc[t, t])) * 100 for t in fr.short_term_tickers if t in S.index]
-        rr = [float(mu[t]) * 100 for t in fr.short_term_tickers if t in mu.index]
+    # Shape = short-term (triangle) or not (circle); color = high MDD (red) or not.
+    # A short-term asset that is also high-MDD is a red triangle, so neither hides the other.
+    def _pts(tickers):
+        tickers = [t for t in tickers if t in S.index and t in mu.index]
+        return ([float(np.sqrt(S.loc[t, t])) * 100 for t in tickers],
+                [float(mu[t]) * 100 for t in tickers])
+
+    short_set = set(fr.short_term_tickers or [])
+    mdd_set   = set(fr.knockout_tickers or [])
+    for tickers, kw, label, z in (
+        ([t for t in fr.short_term_tickers if t not in mdd_set],
+         dict(color=_SHORT_COLOR, marker="^"), L["chart_short_term"], 6),
+        ([t for t in fr.knockout_tickers if t not in short_set],
+         dict(color=_MDD_COLOR), L["chart_high_mdd"], 7),
+        ([t for t in fr.short_term_tickers if t in mdd_set],
+         dict(color=_MDD_COLOR, marker="^"), L["chart_short_high_mdd"], 7),
+    ):
+        vv, rr = _pts(tickers)
         if vv:
-            ax.scatter(vv, rr, color=_SHORT_COLOR, s=200, marker="^",
-                       label=L["chart_short_term"], zorder=6)
+            ax.scatter(vv, rr, s=_MARKER_S, label=label, zorder=z, **kw)
 
-    # High MDD
-    if fr.knockout_tickers:
-        vv = [float(np.sqrt(S.loc[t, t])) * 100 for t in fr.knockout_tickers if t in S.index]
-        rr = [float(mu[t]) * 100 for t in fr.knockout_tickers if t in mu.index]
-        if vv:
-            ax.scatter(vv, rr, color=_MDD_COLOR, s=80,
-                       label=L["chart_high_mdd"], zorder=7)
-
-    # Optimal point
-    ax.scatter(fr.volatility * 100, fr.expected_return * 100,
-               marker="*", s=400, color=_OPT_COLOR, zorder=8,
-               label=L["chart_optimal"])
+    # Optimal point: yellow square (all markers share _MARKER_S, in the legend too)
+    ax.scatter(o_vol * 100, o_ret * 100,
+               marker="s", s=_MARKER_S, color=_OPT_COLOR, edgecolors=_OPT_EDGE, linewidths=1.0,
+               zorder=8, label=L["chart_optimal"])
+    if fixed:
+        ax.scatter(fr.volatility * 100, fr.expected_return * 100,
+                   marker="D", s=_MARKER_S, color=_FIXED_COLOR, edgecolors="white", linewidths=1.0,
+                   zorder=9, label=L["chart_fixed_pf"])
 
     _title = L["ef_title"]
     if len(result.funds) > 1:

@@ -20,6 +20,8 @@ _BENCH_COLOR     = "#9CA3AF"   # gray
 _SHORT_COLOR     = "#F59E0B"   # amber
 _MDD_COLOR       = "#EF4444"   # red
 _OPTIMAL_COLOR   = "#EAB308"   # yellow
+_OPTIMAL_EDGE    = "#A16207"   # darker yellow edge of the optimal square
+_FIXED_COLOR     = "#1F2937"   # charcoal — user-specified weights (◆, white edge)
 
 # Per-benchmark defaults (cycling)
 _BENCH_COLORS = ["#E67E22", "#16A085", "#8E44AD", "#E74C3C", "#2C3E50"]
@@ -228,17 +230,21 @@ def chart_efficient_frontier(result: AnalysisResult, L: dict, fund_idx: int = 0)
         })
     asset_df = pd.DataFrame(asset_rows)
 
-    # Optimal point
+    # Optimal point (for a fund with user-specified weights: the optimum of the
+    # same assets; the fund itself is drawn as ◆)
+    fixed = getattr(fr, "fixed_weights", False)
+    o_vol, o_ret, o_sh = ((fr.opt_volatility, fr.opt_return, fr.opt_sharpe) if fixed
+                          else (fr.volatility, fr.expected_return, fr.sharpe))
     opt_df = pd.DataFrame([{
-        "vol": fr.volatility * 100,
-        "ret": fr.expected_return * 100,
-        "name": f"★ {fr.fund_name}",
+        "vol": o_vol * 100,
+        "ret": o_ret * 100,
+        "name": f"■ {L['chart_optimal'] if fixed else fr.fund_name}",
     }])
 
     # CML
     if vols:
         cml_x = np.linspace(0, max(vols) * 1.1, 40)
-        cml_y = rfr * 100 + fr.sharpe * cml_x
+        cml_y = rfr * 100 + o_sh * cml_x
         cml_df = pd.DataFrame({"vol": cml_x, "ret": cml_y})
     else:
         cml_df = pd.DataFrame({"vol": [], "ret": []})
@@ -286,19 +292,50 @@ def chart_efficient_frontier(result: AnalysisResult, L: dict, fund_idx: int = 0)
     else:
         asset_scatter = alt.Chart(pd.DataFrame()).mark_point()
 
+    # Optimal (tangency) portfolio: yellow square, same size as the asset dots,
+    # with a darker edge so it doesn't fade into the white background
     optimal_point = (
         alt.Chart(opt_df)
-        .mark_text(fontSize=26, color=_OPTIMAL_COLOR, fontWeight="bold", dy=-2)
+        .mark_point(shape="square", size=80, filled=True, opacity=1,
+                    color=_OPTIMAL_COLOR, stroke=_OPTIMAL_EDGE, strokeWidth=1.2)
         .encode(
             x="vol:Q", y="ret:Q",
-            text=alt.value("★"),
             tooltip=[alt.Tooltip("name:N"), alt.Tooltip("vol:Q", format=".2f"),
                      alt.Tooltip("ret:Q", format=".2f")],
         )
     )
 
+    layers = [frontier_line, cml_line, asset_scatter, optimal_point]
+    if fixed:
+        fixed_df = pd.DataFrame([{
+            "vol": fr.volatility * 100,
+            "ret": fr.expected_return * 100,
+            "name": f"◆ {fr.fund_name}",
+            "type": L["chart_fixed_pf"],
+        }])
+        # color + shape on the same field (both untitled) → one legend entry: a purple ◆
+        layers.append(
+            alt.Chart(fixed_df)
+            .mark_point(size=220, filled=True, opacity=1, stroke="white", strokeWidth=1.5)
+            .encode(
+                x="vol:Q", y="ret:Q",
+                color=alt.Color("type:N",
+                                scale=alt.Scale(domain=[L["chart_fixed_pf"]], range=[_FIXED_COLOR]),
+                                legend=alt.Legend(title=None, labelLimit=0, symbolSize=140, symbolStrokeWidth=0)),   # 0 = don't truncate
+                shape=alt.Shape("type:N",
+                                scale=alt.Scale(domain=[L["chart_fixed_pf"]], range=["diamond"]),
+                                legend=alt.Legend(title=None, labelLimit=0, symbolSize=140, symbolStrokeWidth=0)),
+                tooltip=[alt.Tooltip("name:N"), alt.Tooltip("vol:Q", format=".2f"),
+                         alt.Tooltip("ret:Q", format=".2f")],
+            )
+        )
+
+    chart = alt.layer(*layers)
+    if fixed:
+        # keep the ◆ out of the asset legend (its own color/shape scale)
+        chart = chart.resolve_scale(color="independent", shape="independent")
     return (
-        alt.layer(frontier_line, cml_line, asset_scatter, optimal_point)
+        chart
         .properties(height=504)   # 縦横比 3:5（基準幅 840px）
         .configure_legend(orient="bottom", columns=3)
     )
